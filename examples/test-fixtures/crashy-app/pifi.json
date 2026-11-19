@@ -1,0 +1,9 @@
+{
+  "name": "crashy",
+  "version": "1.0.0",
+  "description": "Becomes ready, then exits with an error after CRASH_AFTER_MS",
+  "command": "node",
+  "args": ["index.js"],
+  "memoryMB": 30,
+  "startTimeoutMs": 5000, "env": { "CRASH_AFTER_MS": "150" }
+}

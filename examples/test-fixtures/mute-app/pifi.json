@@ -1,0 +1,9 @@
+{
+  "name": "mute",
+  "version": "1.0.0",
+  "description": "Becomes ready but never answers requests",
+  "command": "node",
+  "args": ["index.js"],
+  "memoryMB": 30,
+  "startTimeoutMs": 5000
+}

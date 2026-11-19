@@ -1,0 +1,9 @@
+{
+  "name": "silent",
+  "version": "1.0.0",
+  "description": "Connects and says hello but never sends ready",
+  "command": "node",
+  "args": ["index.js"],
+  "memoryMB": 30,
+  "startTimeoutMs": 500
+}

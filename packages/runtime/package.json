@@ -1,0 +1,13 @@
+{
+  "name": "@pifi/runtime",
+  "version": "0.1.0",
+  "description": "PiFi runtime: supervises apps on a Raspberry Pi",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": { "pifi": "dist/src/cli.js" },
+  "scripts": { "test": "tsc -b && node --test --test-concurrency=1 \"dist/test/*.test.js\"" },
+  "dependencies": { "@pifi/protocol": "0.1.0", "ws": "^8.18.0", "zod": "^3.25.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "@types/ws": "^8.5.0", "typescript": "^5.6.0" }
+}

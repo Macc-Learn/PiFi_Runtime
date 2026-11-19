@@ -1,0 +1,9 @@
+{
+  "name": "stubborn",
+  "version": "1.0.0",
+  "description": "Ignores shutdown AND SIGTERM, forcing the SIGKILL path",
+  "command": "node",
+  "args": ["index.js"],
+  "memoryMB": 30,
+  "startTimeoutMs": 5000
+}

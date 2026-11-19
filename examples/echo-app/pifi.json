@@ -1,0 +1,14 @@
+{
+  "name": "echo",
+  "version": "1.0.0",
+  "description": "Echoes requests back",
+  "command": "node",
+  "args": ["index.js"],
+  "memoryMB": 60,
+  "needsPort": false,
+  "autostart": false,
+  "restart": { "policy": "on-crash", "maxRestarts": 3, "windowSec": 60 },
+  "startTimeoutMs": 15000,
+  "env": {},
+  "frontend": "https://example.com/echo"
+}

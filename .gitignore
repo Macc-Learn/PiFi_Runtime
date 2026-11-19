@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+# runtime data: never commit tokens, keys or app state
+pifi-data/
+.tmp-tests/
+.env
+*.key
+admin.token
+*.log
