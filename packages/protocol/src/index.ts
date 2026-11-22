@@ -163,3 +163,7 @@ export function parsePiMessage(raw: string): ParseResult<PiMessage> {
 export function encode(message: AppMessage | PiMessage): string {
   return JSON.stringify(message);
 }
+
+// Phase 1 revision + Phase 2 additions (Node-only: crypto uses node:crypto).
+export * from './crypto.js';
+export * from './signaling.js';

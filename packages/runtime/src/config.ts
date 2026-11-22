@@ -31,8 +31,15 @@ export interface Config {
   /** How long a fresh connection has to say `hello`. */
   helloTimeoutMs: number;
   logLevel: LogLevel;
-  /** Dev mode: skip hash verification (loudly). */
+  /** Dev mode: skip hash verification (loudly); enables the signaling dev echo. */
   dev: boolean;
+  /** Default lifetime of a pairing code (max 3600). */
+  pairTtlSec: number;
+  /** Signaling server WebSocket URL. Unset -> signaling disabled (Phase 1 behaviour). */
+  signalUrl?: string;
+  signalPingMs: number;
+  signalBackoffMinMs: number;
+  signalBackoffMaxMs: number;
 }
 
 function intFromEnv(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
@@ -63,6 +70,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     helloTimeoutMs: HELLO_TIMEOUT_MS,
     logLevel: level,
     dev,
+    pairTtlSec: intFromEnv(env, 'PIFI_PAIR_TTL_SEC', 600),
+    signalUrl: env.PIFI_SIGNAL_URL || undefined,
+    signalPingMs: intFromEnv(env, 'PIFI_SIGNAL_PING_MS', 25_000),
+    signalBackoffMinMs: intFromEnv(env, 'PIFI_SIGNAL_BACKOFF_MIN_MS', 1_000),
+    signalBackoffMaxMs: intFromEnv(env, 'PIFI_SIGNAL_BACKOFF_MAX_MS', 30_000),
   };
-  return { ...base, ...overrides };
+  const config = { ...base, ...overrides };
+  if (config.pairTtlSec < 1 || config.pairTtlSec > 3600) throw new Error('PIFI_PAIR_TTL_SEC must be between 1 and 3600');
+  if (config.signalUrl && !/^wss?:\/\//.test(config.signalUrl)) throw new Error('PIFI_SIGNAL_URL must start with ws:// or wss://');
+  if (config.signalBackoffMinMs < 1 || config.signalBackoffMaxMs < config.signalBackoffMinMs) {
+    throw new Error('signal backoff: need 1 <= PIFI_SIGNAL_BACKOFF_MIN_MS <= PIFI_SIGNAL_BACKOFF_MAX_MS');
+  }
+  return config;
 }

@@ -6,5 +6,6 @@ pifi-data/
 .tmp-tests/
 .env
 *.key
+keys/
 admin.token
 *.log

@@ -4,8 +4,18 @@
   "description": "Message types and validation shared by PiFi and its SDK",
   "type": "module",
   "license": "MIT",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "dependencies": { "zod": "^3.25.0" }
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "scripts": {
+    "test": "node --test \"dist/test/*.test.js\""
+  }
 }

@@ -18,6 +18,9 @@ import type { AppManager } from './appManager.js';
 import type { Config } from './config.js';
 import { PifiError } from './errors.js';
 import type { Logger } from './logger.js';
+import type { Identity } from './identity.js';
+import type { PairingManager } from './pairing.js';
+import type { SignalingState } from './signalingClient.js';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -71,6 +74,9 @@ export interface ControlHooks {
   reload: () => Promise<{ apps: number; errors: Array<{ dir: string; error: string }> }>;
   startedAt: number;
   version: string;
+  identity: Identity;
+  pairing: PairingManager;
+  signalingState: () => SignalingState;
 }
 
 export class ControlApi {
@@ -145,11 +151,35 @@ export class ControlApi {
       const s = await this.manager.status();
       return {
         version: this.hooks.version,
+        deviceId: this.hooks.identity.deviceId,
         uptimeMs: Date.now() - this.hooks.startedAt,
         dev: this.config.dev,
         memory: s.memory,
+        signaling: this.hooks.signalingState(),
         apps: s.apps,
       };
+    }
+    if (method === 'GET' && p === '/identity') {
+      // Public information only. The private key is not reachable from the Identity object.
+      const { deviceId, publicKeyPem, algorithm } = this.hooks.identity;
+      return { deviceId, publicKeyPem, algorithm };
+    }
+    if (p === '/pair') {
+      if (method === 'POST') {
+        const body = (await readJsonBody(req)) as { ttlSec?: unknown };
+        const ttl = body.ttlSec === undefined ? undefined : Number(body.ttlSec);
+        const code = this.hooks.pairing.create(ttl);
+        // The ONE place the secret ever leaves the daemon. Never logged.
+        return { deviceId: this.hooks.identity.deviceId, secret: code.secret, expiresAt: new Date(code.expiresAt).toISOString(), ttlSec: code.ttlSec };
+      }
+      if (method === 'GET') {
+        const st = this.hooks.pairing.status();
+        return st.active ? { active: true, expiresAt: new Date(st.expiresAt as number).toISOString() } : { active: false };
+      }
+      if (method === 'DELETE') {
+        this.hooks.pairing.revoke();
+        return { active: false };
+      }
     }
     if (method === 'GET' && p === '/apps') return { apps: this.manager.list() };
     if (method === 'POST' && p === '/reload') return this.hooks.reload();

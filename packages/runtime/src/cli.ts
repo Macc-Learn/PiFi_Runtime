@@ -11,12 +11,18 @@ import { parseArgs } from 'node:util';
 import { loadConfig } from './config.js';
 import { hashDirectory, registeredAppsDir } from './registry.js';
 import { runDaemon } from './index.js';
+import { renderQr } from './qr.js';
+
+const DEFAULT_FRONTEND = 'https://pifi.example';
 
 const USAGE = `pifi <command>
 
   daemon [--dev]            run the PiFi daemon in the foreground
   list                      list apps and their state
-  status                    daemon + memory summary
+  status [--json]           daemon, memory and signaling summary
+  identity [--json]         this Pi's device ID and public key (never the private key)
+  pair [--ttl N] [--frontend URL] [--json] [--no-qr] [--cancel]
+                            create a one-time pairing code and show it as a QR code
   start <app>               start an app
   stop <app> [--hard]       stop an app (--hard = SIGKILL immediately)
   restart <app>             stop then start
@@ -25,9 +31,10 @@ const USAGE = `pifi <command>
   hash <app>                print the hash to paste into the app's pifi.json
   reload                    re-scan registered-apps/
 
-Environment: PIFI_HOME, PIFI_CONTROL_PORT, PIFI_DEV=1 (dev data dir ./pifi-data)`;
+Environment: PIFI_HOME, PIFI_CONTROL_PORT, PIFI_DEV=1 (dev data dir ./pifi-data),
+             PIFI_FRONTEND_URL (pair link base), PIFI_SIGNAL_URL (daemon only)`;
 
-async function api(method: string, route: string, body?: unknown): Promise<unknown> {
+async function api(method: string, route: string, body?: unknown): Promise<any> {
   const config = loadConfig();
   let token: string;
   try {
@@ -71,7 +78,16 @@ interface ListedApp {
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { dev: { type: 'boolean' }, hard: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+    options: {
+      dev: { type: 'boolean' },
+      hard: { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' },
+      json: { type: 'boolean' },
+      ttl: { type: 'string' },
+      frontend: { type: 'string' },
+      'no-qr': { type: 'boolean' },
+      cancel: { type: 'boolean' },
+    },
   });
   const [command, arg, ...rest] = positionals;
   if (values.dev) process.env.PIFI_DEV = '1';
@@ -94,8 +110,30 @@ async function main(): Promise<void> {
       })));
       return;
     }
-    case 'status':
-      console.log(JSON.stringify(await api('GET', '/status'), null, 2));
+    case 'status': {
+      const st = await api('GET', '/status');
+      if (values.json) return void console.log(JSON.stringify(st, null, 2));
+      const sig = st.signaling as { state: string; since: number; url?: string; lastError?: string; retryInMs?: number };
+      console.log(`device     ${st.deviceId}`);
+      console.log(`version    ${st.version}${st.dev ? '  (DEV MODE)' : ''}, up ${formatUptime(st.uptimeMs)}`);
+      console.log(`memory     ${st.memory.availableMB} MB available of ${st.memory.totalMB} MB`);
+      console.log(
+        `signaling  ${sig.state} since ${new Date(sig.since).toLocaleTimeString()}` +
+          (sig.url ? `  ${sig.url}` : '') +
+          (sig.retryInMs !== undefined ? `  (retry in ${Math.round(sig.retryInMs / 1000)}s)` : '') +
+          (sig.lastError && sig.state !== 'online' ? `  last error: ${sig.lastError}` : ''),
+      );
+      console.log(`apps       ${st.apps.map((a: { name: string; state: string }) => `${a.name}:${a.state}`).join(', ') || '(none)'}`);
+      return;
+    }
+    case 'identity': {
+      const id = await api('GET', '/identity');
+      if (values.json) return void console.log(JSON.stringify(id, null, 2));
+      console.log(`device ID  ${id.deviceId}\nalgorithm  ${id.algorithm}\n\n${id.publicKeyPem.trim()}`);
+      return;
+    }
+    case 'pair':
+      await pair(values);
       return;
     case 'start':
     case 'restart':
@@ -129,6 +167,37 @@ async function main(): Promise<void> {
       console.error(`unknown command "${command}"\n\n${USAGE}`);
       process.exitCode = 2;
   }
+}
+
+async function pair(values: { ttl?: string; frontend?: string; json?: boolean; 'no-qr'?: boolean; cancel?: boolean }): Promise<void> {
+  if (values.cancel) {
+    await api('DELETE', '/pair');
+    console.log('pairing code revoked');
+    return;
+  }
+  const ttlSec = values.ttl === undefined ? undefined : Number(values.ttl);
+  if (ttlSec !== undefined && !Number.isInteger(ttlSec)) throw new Error('--ttl must be a whole number of seconds');
+  const frontend = (values.frontend || process.env.PIFI_FRONTEND_URL || DEFAULT_FRONTEND).replace(/\/+$/, '');
+
+  const code = (await api('POST', '/pair', ttlSec === undefined ? {} : { ttlSec })) as {
+    deviceId: string; secret: string; expiresAt: string; ttlSec: number;
+  };
+  // The secret goes in the #fragment: browsers never send fragments to any server,
+  // so not even the static host serving the /pair page sees it.
+  const link = `${frontend}/pair#id=${code.deviceId}&s=${code.secret}`;
+
+  if (values.json) {
+    console.log(JSON.stringify({ ...code, link }, null, 2));
+    return;
+  }
+  if (frontend === DEFAULT_FRONTEND) {
+    console.error(`warning: using the placeholder front-end ${DEFAULT_FRONTEND}; set PIFI_FRONTEND_URL or --frontend`);
+  }
+  if (!values['no-qr']) console.log(await renderQr(link));
+  console.log(`Pair link: ${link}`);
+  console.log(`Expires:   ${new Date(code.expiresAt).toLocaleString()} (${Math.round(code.ttlSec / 60)} min)`);
+  console.log('\nAnyone who sees this QR code or link before it expires can pair with this Pi.');
+  console.log('Run `clear` afterwards, and `pifi pair --cancel` if you no longer need it.');
 }
 
 main().catch((err) => {

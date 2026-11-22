@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { Daemon } from '../src/daemon.js';
 import { loadConfig, type Config } from '../src/config.js';
-import { silentLogger } from '../src/logger.js';
+import { silentLogger, type Logger } from '../src/logger.js';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+import type { DaemonOptions } from '../src/daemon.js';
 import type { MemoryReader } from '../src/resources.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +62,8 @@ export async function startDaemon(opts: {
   configOverrides?: Partial<Config>;
   readMemory?: MemoryReader;
   keepHome?: boolean;
+  log?: Logger;
+  signaling?: DaemonOptions['signaling'];
 } = {}): Promise<TestDaemon> {
   const home = opts.home ?? (await makeHome());
   for (const app of opts.apps ?? []) await installApp(home, app);
@@ -75,7 +80,12 @@ export async function startDaemon(opts: {
     startTimeoutMs: 3000,
     ...opts.configOverrides,
   });
-  const daemon = new Daemon({ config, log: silentLogger, readMemory: opts.readMemory ?? (() => ({ totalMB: 4096, availableMB: 2048 })) });
+  const daemon = new Daemon({
+    config,
+    log: opts.log ?? silentLogger,
+    readMemory: opts.readMemory ?? (() => ({ totalMB: 4096, availableMB: 2048 })),
+    signaling: opts.signaling,
+  });
   await daemon.start();
   return {
     daemon,
@@ -120,3 +130,42 @@ export function rawClient(port: number, opts: { origin?: string } = {}): {
 
 export const hello = (name: string, token: string): string =>
   JSON.stringify({ v: 1, type: 'hello', payload: { name, token, sdkVersion: 'test' } });
+
+/** A Logger that records every line, so tests can assert what was (not) logged. */
+export function memoryLogger(): { log: Logger; lines: string[] } {
+  const lines: string[] = [];
+  const rec = (lvl: string) => (m: string): void => { lines.push(`${lvl} ${m}`); };
+  return { lines, log: { debug: rec('debug'), info: rec('info'), warn: rec('warn'), error: rec('error') } };
+}
+
+/** node:http (not fetch) so tests can set forbidden headers like Origin and Host. */
+export function call(port: number, opts: { path?: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: opts.path ?? '/apps', method: opts.method ?? 'GET', headers: opts.headers }, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+    req.end(opts.body);
+  });
+}
+
+export const CLI_PATH = path.join(REPO_ROOT, 'packages/runtime/dist/src/cli.js');
+
+/** Run the real `pifi` CLI against a test daemon. */
+export function runCli(args: string[], env: Record<string, string>): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [CLI_PATH, ...args], { env: { PATH: process.env.PATH ?? '', ...env } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => (stdout += c));
+    child.stderr.on('data', (c) => (stderr += c));
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+export async function adminHeaders(home: string): Promise<Record<string, string>> {
+  const token = (await readFile(path.join(home, 'admin.token'), 'utf8')).trim();
+  return { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+}
