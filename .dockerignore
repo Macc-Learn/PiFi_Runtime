@@ -1,0 +1,14 @@
+# The Docker build context is the REPO ROOT (the server image needs packages/protocol).
+# Keep secrets and bulk out of it: a Pi's identity keys or tokens must never end up in an image.
+.git
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/keys/
+**/*.key
+**/*.token
+**/admin.token
+**/.env
+**/pifi-data/
+.tmp-tests
+**/*.log

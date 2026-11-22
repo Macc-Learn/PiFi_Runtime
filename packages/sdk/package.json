@@ -15,8 +15,5 @@
   "dependencies": {
     "@pifi/protocol": "0.1.0",
     "ws": "8.23.0"
-  },
-  "devDependencies": {
-    "@types/ws": "^8.5.0"
   }
 }

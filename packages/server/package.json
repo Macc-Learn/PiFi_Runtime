@@ -1,0 +1,17 @@
+{
+  "name": "@pifi/server",
+  "version": "0.1.0",
+  "description": "PiFi signaling server: presence + opaque relay between phones and Pis",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/src/server.js",
+  "types": "dist/src/server.d.ts",
+  "exports": { ".": { "types": "./dist/src/server.d.ts", "default": "./dist/src/server.js" } },
+  "bin": { "pifi-signal-server": "dist/src/index.js" },
+  "scripts": {
+    "start": "node dist/src/index.js",
+    "test": "node --test --test-concurrency=1 \"dist/test/*.test.js\""
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "@pifi/protocol": "0.1.0", "ws": "8.23.0", "zod": "3.25.76" }
+}

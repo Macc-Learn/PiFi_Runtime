@@ -5,12 +5,23 @@
   "description": "PiFi: a small runtime that manages apps on a Raspberry Pi",
   "type": "module",
   "license": "MIT",
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "tsc -b && node --test --test-concurrency=1 \"packages/runtime/dist/test/*.test.js\"",
-    "demo:register": "node scripts/register-echo.mjs"
+    "test": "tsc -b && node --test --test-concurrency=1 \"packages/*/dist/test/*.test.js\"",
+    "demo:register": "node scripts/register-echo.mjs",
+    "signal-server": "node packages/server/dist/src/index.js",
+    "signal-testclient": "node packages/signal-testclient/dist/src/testclient.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.6.0"
   }
 }

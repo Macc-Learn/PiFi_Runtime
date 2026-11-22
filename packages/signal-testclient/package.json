@@ -1,0 +1,14 @@
+{
+  "name": "@pifi/signal-testclient",
+  "version": "0.1.0",
+  "description": "Fake phone for testing PiFi signaling from the command line",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/src/client.js",
+  "types": "dist/src/client.d.ts",
+  "bin": { "pifi-signal-testclient": "dist/src/testclient.js" },
+  "scripts": { "test": "node --test --test-concurrency=1 \"dist/test/*.test.js\"" },
+  "dependencies": { "@pifi/protocol": "0.1.0", "ws": "8.23.0" },
+  "devDependencies": { "@pifi/runtime": "0.1.0", "@pifi/server": "0.1.0" }
+}

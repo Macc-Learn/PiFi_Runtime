@@ -32,6 +32,8 @@ Phase 1 has no phone, no internet and no WebRTC. The control API stands in for
 | `resources.ts`, `ports.ts` | RAM check, free-port allocation |
 | `state.ts` | `state.json` (what should run) and `pids.json` (orphan cleanup), written atomically |
 | `daemon.ts`, `index.ts` | Wiring and signal handling |
+| `identity.ts`, `pairing.ts`, `qr.ts` | Device keypair, one-time pairing codes, QR rendering |
+| `signalingClient.ts` | Outbound connection to the signaling server (Phase 2) |
 
 `packages/protocol` holds the message shapes (shared by the runtime and the
 SDK). `packages/sdk` is the small library apps use.
@@ -132,6 +134,49 @@ Close codes: `4001` bad/missing token · `4002` duplicate connection ·
 (bad JSON, first message not `hello`, no `hello` within 3 s). An oversized
 frame (> 1 MiB) is closed by the `ws` library with the standard `1009`.
 On `shutdown`: clean up and exit `0`. If the socket closes, exit non-zero.
+
+## Device identity and pairing (Phase 1 revision)
+
+PiFi has no accounts. Identity is a keypair.
+
+- `identity.ts` creates `keys/identity.key` (PKCS#8, `0600`) and `identity.pub`
+  (SPKI) on first start, in a `0700` folder, written temp-file-then-rename so a
+  crash can't leave half a key. If only one file exists, or the two don't
+  match, the daemon **refuses to start**: silently making a new key would change
+  the device's identity and unpair every phone.
+- `deviceId = base32(sha256(SPKI DER))`, lowercase, no padding, 52 characters.
+  The code is in `packages/protocol/src/crypto.ts` so the Pi and the signaling
+  server compute it identically. A browser does the same with `exportKey('spki')`,
+  `digest('SHA-256')` and base32. A fixed test vector lives in `packages/protocol/test`.
+- ECDSA P-256 with IEEE P1363 (raw 64-byte) signatures, because that is what
+  WebCrypto in every browser speaks.
+- The private key sits in a closure inside the `Identity` object. There is no
+  property to print, so `JSON.stringify`, logs and API responses can't leak it.
+
+`pairing.ts` holds at most one pairing code: 16 random bytes (base64url), with a
+TTL. `POST /pair` returns it once; `GET /pair` never does. The CLI turns it into
+`<frontend>/pair#id=<deviceId>&s=<secret>` and a QR code. The secret goes after
+`#` because browsers never send the fragment to any server.
+
+## Signaling client (Phase 2)
+
+`signalingClient.ts` is the daemon's only outbound connection (see
+[signaling.md](signaling.md) for the wire protocol). Its states are
+`disabled → connecting → authenticating → online`, and `backoff` after any drop.
+
+1. Open `PIFI_SIGNAL_URL`, send `pi.hello {deviceId, publicKey}`.
+2. The server answers `challenge {nonce}`; the client signs
+   `"pifi-register-v1" + nonce + deviceId` with the identity key.
+3. `registered` → `online`. Pings every 25 s, so a dead server is noticed.
+4. On a drop, the close code decides the wait: 4100 (server redeploying) →
+   random 0–3 s; 4011 (another connection took over this identity) → ≥ 30 s, and
+   give up after 3 in a row; 4010 (rejected) → max backoff; anything else →
+   exponential backoff 1 s → 30 s with ±20% jitter, reset after 60 s online.
+
+The daemon starts the client *after* everything else is listening and never
+waits for it, so a missing or broken server can't stop apps from running.
+Incoming relays are dropped in Phase 2, except a dev-only echo
+(`PIFI_DEV=1`, payload `{"kind":"echo"}`) used by the test client.
 
 ## Deliberate Phase 1 simplifications
 
