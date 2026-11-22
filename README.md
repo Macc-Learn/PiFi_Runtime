@@ -1,13 +1,8 @@
 # PiFi
 
-PiFi is a small runtime for a Raspberry Pi that acts as a **building manager for
-apps**: it starts them, watches them, restarts them if they crash, stops them
-cleanly, and lets nothing reach them except through PiFi.
-
-Apps are separate OS processes. They talk to PiFi over a **localhost-only
-WebSocket**. Later phases add an outbound connection to a signaling server and
-WebRTC to a phone browser, so a Pi can serve files **without opening any
-router port**. The first planned app is a NAS-style file store.
+PiFi is an app runtime for your Raspberry Pi: a self-hosted app platform you can reach from your phone, without opening any router ports.
+Think of it as a building manager for your Pi's apps. It starts them, watches them, restarts them if they crash, stops them cleanly, and lets nothing reach them except through PiFi. Apps are separate processes in any language, and they talk to PiFi over a localhost-only WebSocket.
+Your Pi dials out to a small signaling server, and your phone connects to it directly over WebRTC. The first planned app is a NAS-style file store.
 
 > **Experimental, not security-audited.** See [SECURITY.md](SECURITY.md).
 
