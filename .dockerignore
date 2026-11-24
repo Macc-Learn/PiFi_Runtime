@@ -12,3 +12,4 @@
 **/pifi-data/
 .tmp-tests
 **/*.log
+**/dist-core

@@ -1,0 +1,16 @@
+{
+  "name": "@pifi/shell",
+  "version": "0.1.0",
+  "description": "PiFi shell: the static site that pairs a phone, connects to a Pi and hosts app front-ends",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "exports": { "./core": { "types": "./dist-core/index.d.ts", "default": "./dist-core/index.js" } },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": { "@pifi/protocol": "0.1.0", "preact": "11.2.0" },
+  "devDependencies": { "vite": "8.3.8", "vitest": "5.1.1", "happy-dom": "21.0.4" }
+}

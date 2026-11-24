@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Pages can't set headers, so the content policy is delivered here. No inline scripts anywhere. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' %PIFI_SIGNAL_ORIGIN%; frame-src https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; object-src 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <title>PiFi</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="src/ui/main.tsx"></script>
+  </body>
+</html>

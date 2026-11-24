@@ -203,3 +203,4 @@ export { b64urlDecode, b64urlEncode, bytesEqual, concatBytes, fromUtf8, utf8 } f
 export * from './signed.js';
 export * from './relay.js';
 export * from './wire.js';
+export * from './port.js';

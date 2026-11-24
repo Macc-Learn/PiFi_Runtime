@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Echo</title>
+    <link rel="stylesheet" href="style.css" />
+    <!-- A classic script (not type=module): inside the shell's sandbox this page has an
+         opaque origin, and module scripts would need CORS headers from whatever host serves it. -->
+    <script src="echo.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Echo</h1>
+      <p id="status" role="status">Connecting to PiFi…</p>
+
+      <section>
+        <h2>Request</h2>
+        <label for="text">Text to echo</label>
+        <input id="text" type="text" value="hello from the phone" />
+        <button id="echo">Send</button>
+        <pre id="echo-out" aria-live="polite"></pre>
+      </section>
+
+      <section>
+        <h2>Events</h2>
+        <button id="count">Start counting</button>
+        <button id="stop">Stop</button>
+        <p>Last event: <span id="count-out">-</span></p>
+      </section>
+
+      <section>
+        <h2>Stream</h2>
+        <label for="size">Bytes to upload and get back (KiB)</label>
+        <input id="size" type="number" min="1" max="102400" value="512" />
+        <button id="upload">Upload and echo</button>
+        <pre id="upload-out" aria-live="polite"></pre>
+      </section>
+    </main>
+  </body>
+</html>

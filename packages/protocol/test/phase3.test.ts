@@ -91,7 +91,7 @@ test('wire frames: valid frames parse, malformed/oversized/unknown do not; chunk
 
 test('the browser entry imports nothing from node:*', () => {
   const dist = path.resolve(here, '../src');
-  for (const f of ['browser.js', 'encoding.js', 'signed.js', 'relay.js', 'wire.js', 'names.js']) {
+  for (const f of ['browser.js', 'encoding.js', 'signed.js', 'relay.js', 'wire.js', 'names.js', 'signaling.js', 'port.js']) {
     assert.doesNotMatch(readFileSync(path.join(dist, f), 'utf8'), /from ['"]node:|require\(|Buffer\./, f);
   }
 });

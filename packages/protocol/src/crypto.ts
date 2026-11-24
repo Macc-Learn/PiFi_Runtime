@@ -51,7 +51,7 @@ export function deviceIdFromSpki(spkiDer: Uint8Array): string {
   return base32Encode(createHash('sha256').update(spkiDer).digest());
 }
 
-export const DEVICE_ID_REGEX = /^[a-z2-7]{52}$/;
+export { DEVICE_ID_REGEX } from './names.js';
 
 /** Parse SPKI DER and confirm it is a P-256 key. Returns undefined for anything else. */
 export function importP256Spki(spkiDer: Uint8Array): KeyObject | undefined {

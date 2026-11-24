@@ -7,7 +7,7 @@
  * never decodes it.
  */
 import { z } from 'zod';
-import { DEVICE_ID_REGEX } from './crypto.js';
+import { DEVICE_ID_REGEX } from './names.js';
 
 export const SIGNAL_PROTOCOL_VERSION = 1 as const;
 

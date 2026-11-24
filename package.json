@@ -14,10 +14,12 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "tsc -b && node --test --test-concurrency=1 \"packages/*/dist/test/*.test.js\"",
+    "test": "tsc -b && node --test --test-concurrency=1 \"packages/*/dist/test/*.test.js\" && npm run -s test -w @pifi/shell",
     "demo:register": "node scripts/register-echo.mjs",
     "signal-server": "node packages/server/dist/src/index.js",
-    "signal-testclient": "node packages/signal-testclient/dist/src/testclient.js"
+    "signal-testclient": "node packages/signal-testclient/dist/src/testclient.js",
+    "build:shell": "npm run -s build -w @pifi/shell && node examples/echo-app/frontend/build.mjs packages/shell/dist/examples/echo",
+    "typecheck:shell": "tsc -p packages/shell/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

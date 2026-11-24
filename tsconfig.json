@@ -15,6 +15,12 @@
     },
     {
       "path": "packages/signal-testclient"
+    },
+    {
+      "path": "packages/client"
+    },
+    {
+      "path": "packages/shell/tsconfig.core.json"
     }
   ]
 }
