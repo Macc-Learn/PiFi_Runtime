@@ -26,6 +26,6 @@ test('role-specific schemas keep Pi and phone messages apart', () => {
 
 test('registration message is the fixed-length concatenation', () => {
   const nonce = 'N'.repeat(43);
-  assert.equal(registrationMessage(nonce, id).toString('utf8'), `pifi-register-v1${nonce}${id}`);
+  assert.equal(new TextDecoder().decode(registrationMessage(nonce, id)), `pifi-register-v1${nonce}${id}`);
   assert.equal(registrationMessage(nonce, id).length, 16 + 43 + 52);
 });

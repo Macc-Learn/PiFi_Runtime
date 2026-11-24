@@ -32,6 +32,11 @@ export interface PairInput {
   retryMs?: number;
   maxWaitMs?: number;
   signal?: AbortSignal;
+  /**
+   * Tools only (the Node fake phone persists its key in a file). The shell never
+   * passes this, so real phones always get a fresh non-extractable key.
+   */
+  keyPair?: CryptoKeyPair;
 }
 
 /** Parse `#id=...&s=...`. Returns undefined for anything that isn't a well-formed pair link. */
@@ -77,7 +82,7 @@ export async function pairWithPi(input: PairInput): Promise<PiRecord> {
   try {
     // 3: this phone's key for THIS Pi (one key per Pi, so Pis can't link a phone).
     step('key', 'active');
-    const keyPair = await generatePhoneKeyPair(env.crypto);
+    const keyPair = input.keyPair ?? (await generatePhoneKeyPair(env.crypto));
     const phoneSpki = await exportSpki(env.crypto, keyPair.publicKey);
     const phoneId = await idFromSpki(env.crypto, phoneSpki);
     const proof = await pairProof(env.crypto, input.secret, deviceId, phoneSpki);

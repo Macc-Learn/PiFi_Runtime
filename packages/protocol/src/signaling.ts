@@ -34,8 +34,8 @@ export type SignalErrorCode = 'target-offline' | 'peer-gone' | 'payload-too-larg
  * All three parts have fixed lengths (16, 43, 52), so the concatenation is unambiguous.
  */
 export const REGISTER_CONTEXT = 'pifi-register-v1';
-export function registrationMessage(nonce: string, deviceId: string): Buffer {
-  return Buffer.from(REGISTER_CONTEXT + nonce + deviceId, 'utf8');
+export function registrationMessage(nonce: string, deviceId: string): Uint8Array {
+  return new TextEncoder().encode(REGISTER_CONTEXT + nonce + deviceId); // no Buffer: this module is browser-safe
 }
 
 const v = z.literal(SIGNAL_PROTOCOL_VERSION);

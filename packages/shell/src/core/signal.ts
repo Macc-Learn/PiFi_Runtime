@@ -60,7 +60,11 @@ export class SignalSocket {
       if (this.closed) throw new ShellError('SERVER_UNREACHABLE', 'signaling connection closed');
       const left = deadline - Date.now();
       if (left <= 0) throw new ShellError('TIMEOUT', 'no reply from the Pi in time');
-      await new Promise<void>((r) => { this.waiters.push(r); setTimeout(r, left); });
+      await new Promise<void>((r) => {
+        // Clear the timeout when woken early, or a stale timer keeps Node (the fake phone) alive.
+        const timer = setTimeout(r, left);
+        this.waiters.push(() => { clearTimeout(timer); r(); });
+      });
     }
   }
 
