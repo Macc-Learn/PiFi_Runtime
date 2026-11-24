@@ -10,7 +10,10 @@
  * able to verify the Pi's signatures in later phases.
  * Why IEEE P1363 signatures: WebCrypto produces/expects raw r||s (64 bytes), not DER.
  */
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto';
+import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto';
+
+import { base32Encode } from './encoding.js';
+import { pairProofMessage } from './signed.js';
 
 export const KEY_ALGORITHM = 'ECDSA-P256' as const;
 export const P1363_SIGNATURE_BYTES = 64;
@@ -19,25 +22,7 @@ export const P1363_SIGNATURE_BYTES = 64;
 // Encodings
 // ---------------------------------------------------------------------------
 
-const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
-
-/** RFC 4648 base32, lowercase, no padding. */
-export function base32Encode(bytes: Uint8Array): string {
-  let out = '';
-  let buffer = 0; // holds the not-yet-emitted bits
-  let bits = 0;
-  for (const byte of bytes) {
-    buffer = (buffer << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      out += BASE32_ALPHABET[(buffer >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-    buffer &= (1 << bits) - 1; // drop emitted bits so the number never grows
-  }
-  if (bits > 0) out += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
-  return out;
-}
+export { base32Encode } from './encoding.js';
 
 const BASE64URL = /^[A-Za-z0-9_-]*$/;
 
@@ -116,3 +101,17 @@ export function spkiDerFromPem(pem: string): Buffer {
 export function randomNonce(): string {
   return randomBytes(32).toString('base64url');
 }
+
+/**
+ * The pairing proof a phone sends (Phase 3 §4.2):
+ *   HMAC-SHA256(key = secret bytes, "pifi-pair-v1" || deviceId || phoneSpki)
+ * `secret` is the base64url string from the QR; the key is its 16 decoded bytes.
+ */
+export function pairProof(secret: string, deviceId: string, phoneSpki: Uint8Array): Buffer {
+  const key = fromBase64url(secret);
+  if (!key) throw new Error('pairing secret is not base64url');
+  return createHmac('sha256', key).update(pairProofMessage(deviceId, phoneSpki)).digest();
+}
+
+/** phoneId uses the same derivation as a Pi's deviceId. */
+export const phoneIdFromSpki = deviceIdFromSpki;

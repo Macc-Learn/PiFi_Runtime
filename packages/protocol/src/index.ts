@@ -9,6 +9,7 @@
  *   { "v": 1, "type": "...", "id": "...", "payload": ..., "error": { code, message } }
  */
 import { z } from 'zod';
+import { APP_NAME } from './names.js';
 
 export const PROTOCOL_VERSION = 1 as const;
 
@@ -17,7 +18,7 @@ export const PROTOCOL_VERSION = 1 as const;
  * are kept to a tiny safe alphabet: no dots, slashes or uppercase. This is what
  * stops a manifest called "../../etc" from escaping the registry directory.
  */
-export const APP_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,31}$/;
+export const APP_NAME_REGEX = APP_NAME;
 
 /** WebSocket close codes PiFi uses. 4000-4999 is the range reserved for applications. */
 export const CloseCode = {
@@ -52,6 +53,8 @@ const HelloSchema = z.object({
     name: z.string(),
     token: z.string(),
     sdkVersion: z.string(),
+    /** Optional features the app supports, e.g. ["streams"]. Old SDKs omit it. */
+    capabilities: z.array(z.string().max(32)).max(16).optional(),
   }),
 });
 
@@ -80,12 +83,37 @@ const LogSchema = z.object({
   }),
 });
 
+// ---------------------------------------------------------------------------
+// Streams (Phase 3), both directions. Data travels as binary frames [u32 sid][bytes].
+// Streams PiFi opens use odd sids, streams an app opens use even sids.
+// ---------------------------------------------------------------------------
+
+export const STREAMS_CAPABILITY = 'streams';
+const sid = z.number().int().min(1).max(0xffffffff);
+
+const StreamOpenSchema = z.object({
+  v: z.literal(PROTOCOL_VERSION),
+  type: z.literal('stream.open'),
+  sid,
+  op: z.string().min(1).max(64),
+  meta: z.unknown().optional(),
+  /** On app-opened streams: which phone session to open it towards (from a request's `session`). */
+  session: z.string().max(64).optional(),
+});
+const StreamAcceptSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('stream.accept'), sid });
+const StreamRejectSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('stream.reject'), sid, error: ErrorBodySchema });
+const StreamEndSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('stream.end'), sid });
+const StreamAbortSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('stream.abort'), sid, reason: z.string().max(200) });
+const StreamSchemas = [StreamOpenSchema, StreamAcceptSchema, StreamRejectSchema, StreamEndSchema, StreamAbortSchema] as const;
+export type StreamMessage = z.infer<(typeof StreamSchemas)[number]>;
+
 export const AppMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   ReadySchema,
   ResponseSchema,
   EventSchema,
   LogSchema,
+  ...StreamSchemas,
 ]);
 export type AppMessage = z.infer<typeof AppMessageSchema>;
 export type HelloMessage = z.infer<typeof HelloSchema>;
@@ -124,6 +152,7 @@ export const PiMessageSchema = z.discriminatedUnion('type', [
   RequestSchema,
   ShutdownSchema,
   ProtocolErrorSchema,
+  ...StreamSchemas,
 ]);
 export type PiMessage = z.infer<typeof PiMessageSchema>;
 
@@ -167,3 +196,8 @@ export function encode(message: AppMessage | PiMessage): string {
 // Phase 1 revision + Phase 2 additions (Node-only: crypto uses node:crypto).
 export * from './crypto.js';
 export * from './signaling.js';
+// Phase 3 (also available without node:* via '@pifi/protocol/browser').
+export { b64urlDecode, b64urlEncode, bytesEqual, concatBytes, fromUtf8, utf8 } from './encoding.js';
+export * from './signed.js';
+export * from './relay.js';
+export * from './wire.js';

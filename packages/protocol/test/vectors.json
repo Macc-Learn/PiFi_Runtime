@@ -1,0 +1,44 @@
+{
+  "_note": "Computed with Python hashlib/hmac/struct and OpenSSL, NOT with PiFi code. Shared by Node and shell tests.",
+  "signedMessage": {
+    "context": "pifi-test",
+    "parts_hex": [
+      "6162",
+      "010203",
+      ""
+    ],
+    "expected_hex": "706966692d746573740000000261620000000301020300000000"
+  },
+  "sessionPhone": {
+    "deviceId": "z5dl7h456ex5woaiskix3ibleex7mhkeu54jkpxduk3pkpsx2w7q",
+    "phoneId": "5w5jtpalrkcbhxweeszd5cx24cc6zhdxyikri3rjwf4gtnkx2ydq",
+    "np": "AAECAwQFBgcICQoLDA0ODw",
+    "nc": "EBESExQVFhcYGRobHB0eHw",
+    "fingerprint_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283",
+    "expected_hex": "706966692d73657373696f6e2d70686f6e652d7631000000347a35646c3768343536657835776f6169736b69783369626c656578376d686b657535346a6b707864756b33706b70737832773771000000343577356a7470616c726b63626878776565737a6435637832346363367a68647879696b726933726a77663467746e6b783279647100000010000102030405060708090a0b0c0d0e0f00000010101112131415161718191a1b1c1d1e1f000000206465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283"
+  },
+  "pairProof": {
+    "secret": "yMnKy8zNzs_Q0dLT1NXW1w",
+    "deviceId": "z5dl7h456ex5woaiskix3ibleex7mhkeu54jkpxduk3pkpsx2w7q",
+    "phoneSpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWOoJ82pHQIsD0Ew5TW30lt9WKsuF_1SnI0Ik6Zo3e9WE00xDRw2e_jxLnOFomt3nCbGII9AjiM5bOVfoubBdZQ",
+    "expectedProof": "QKd9N9SRua5JHtcZXo7dq0rqRn4oPeK1OebFCpTwe1E"
+  },
+  "phoneId": {
+    "phoneSpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWOoJ82pHQIsD0Ew5TW30lt9WKsuF_1SnI0Ik6Zo3e9WE00xDRw2e_jxLnOFomt3nCbGII9AjiM5bOVfoubBdZQ",
+    "expected": "5w5jtpalrkcbhxweeszd5cx24cc6zhdxyikri3rjwf4gtnkx2ydq"
+  },
+  "p1363": {
+    "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWOoJ82pHQIsD0Ew5TW30lt9WKsuF_1SnI0Ik6Zo3e9WE00xDRw2e_jxLnOFomt3nCbGII9AjiM5bOVfoubBdZQ",
+    "message_utf8": "pifi-test-message",
+    "signature": "52lvlG9mqTRGBxuTyKtg4H4YY6Ibf2owZP1qUpqyU7FMuTosJTYEnBZlPHJc7j5ccavn347kbsr5vhocZOcDLA"
+  },
+  "fingerprints": {
+    "good": "v=0\r\na=fingerprint:sha-256 64:65:66:67:68:69:6A:6B:6C:6D:6E:6F:70:71:72:73:74:75:76:77:78:79:7A:7B:7C:7D:7E:7F:80:81:82:83\r\nm=application 9\r\na=fingerprint:SHA-256 64:65:66:67:68:69:6a:6b:6c:6d:6e:6f:70:71:72:73:74:75:76:77:78:79:7a:7b:7c:7d:7e:7f:80:81:82:83\r\n",
+    "good_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283",
+    "none": "v=0\r\nm=application 9\r\n",
+    "mixed": "a=fingerprint:sha-256 64:65:66:67:68:69:6A:6B:6C:6D:6E:6F:70:71:72:73:74:75:76:77:78:79:7A:7B:7C:7D:7E:7F:80:81:82:83\r\na=fingerprint:sha-1 AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB\r\n",
+    "differing": "a=fingerprint:sha-256 64:65:66:67:68:69:6A:6B:6C:6D:6E:6F:70:71:72:73:74:75:76:77:78:79:7A:7B:7C:7D:7E:7F:80:81:82:83\r\na=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00\r\n",
+    "malformed": "a=fingerprint:sha-256 ZZ:65:66:67:68:69:6A:6B:6C:6D:6E:6F:70:71:72:73:74:75:76:77:78:79:7A:7B:7C:7D:7E:7F:80:81:82:83\r\n",
+    "short": "a=fingerprint:sha-256 AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB\r\n"
+  }
+}
