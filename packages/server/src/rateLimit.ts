@@ -5,7 +5,9 @@
  * and per connection: a message token bucket (created by wsHandler).
  *
  * IPs live only in these maps and are swept away once idle, never persisted.
+ * Keys come from ipKey(): IPv4 per address, IPv6 per /64.
  */
+import { ipKey } from './ipKey.js';
 
 /**
  * Classic token bucket: holds up to `capacity` tokens, refills at `refillPerSec`.
@@ -55,10 +57,11 @@ export class IpRateLimiter {
   constructor(private readonly cfg: IpRateLimitConfig, private readonly now: () => number = Date.now) {}
 
   private entry(ip: string): IpEntry {
-    let e = this.entries.get(ip);
+    const key = ipKey(ip);
+    let e = this.entries.get(key);
     if (!e) {
       e = { connections: new TokenBucket(this.cfg.connectionsPerMinute, this.cfg.connectionsPerMinute / 60, this.now), failures: [] };
-      this.entries.set(ip, e);
+      this.entries.set(key, e);
     }
     return e;
   }
@@ -68,7 +71,7 @@ export class IpRateLimiter {
   }
 
   isRegistrationBlocked(ip: string): boolean {
-    const e = this.entries.get(ip);
+    const e = this.entries.get(ipKey(ip));
     return e?.blockedUntil !== undefined && this.now() < e.blockedUntil;
   }
 

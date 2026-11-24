@@ -169,6 +169,7 @@ test('query: online, offline (left), and never-seen deviceIds', async () => {
       const phone = await TestWs.connect(s.url);
       phone.send({ type: 'query', deviceId: id });
       assert.deepEqual(await phone.next(), { v: 1, type: 'status', deviceId: id, online: expected });
+      if (!expected) assert.equal((await phone.closed).code, 1000, 'offline target: reply, then close');
       phone.close();
     }
   } finally {
@@ -240,8 +241,9 @@ test('oversized frame rejected; invalid JSON / schema -> 4013; role switching ->
     bin.sendRaw(Buffer.from([1, 2, 3]));
     assert.equal((await bin.closed).code, PROTOCOL_VIOLATION, 'binary frame');
 
-    // phone -> pi.hello
+    // phone -> pi.hello (the phone targets an ONLINE Pi, so it is allowed to stay)
     const pi = makePi();
+    const { ws: piWs } = await registerPi(s.url, pi);
     const phone = await TestWs.connect(s.url);
     phone.send({ type: 'query', deviceId: pi.deviceId });
     await phone.next();
@@ -249,9 +251,9 @@ test('oversized frame rejected; invalid JSON / schema -> 4013; role switching ->
     assert.equal((await phone.closed).code, PROTOCOL_VIOLATION);
 
     // pi -> query
-    const { ws: piWs } = await registerPi(s.url, pi);
     piWs.send({ type: 'query', deviceId: pi.deviceId });
     assert.equal((await piWs.closed).code, PROTOCOL_VIOLATION);
+    await registerPi(s.url, pi); // back online for the payload check below
 
     // A payload that fits in the frame but exceeds the relay limit gets an error, not a hang-up.
     const p = await TestWs.connect(s.url);
@@ -281,6 +283,7 @@ test('rate limit: messages per connection -> 4012', async () => {
   const s = await startServer({ messageBurst: 3, messagesPerSecond: 1 });
   try {
     const pi = makePi();
+    await registerPi(s.url, pi);
     const ws = await TestWs.connect(s.url);
     for (let i = 0; i < 6; i++) ws.send({ type: 'query', deviceId: pi.deviceId });
     assert.equal((await ws.closed).code, RATE_LIMITED);
@@ -309,7 +312,9 @@ test('rate limit: repeated registration failures block the IP', async () => {
 test('rate limit: MAX_PHONES_PER_IP', async () => {
   const s = await startServer({ maxPhonesPerIp: 2 });
   try {
-    const id = makePi().deviceId;
+    const target = makePi();
+    await registerPi(s.url, target); // phones only stay connected while their Pi is online
+    const id = target.deviceId;
     const phones = await Promise.all([0, 1].map(() => TestWs.connect(s.url)));
     for (const p of phones) { p.send({ type: 'query', deviceId: id }); await p.next(); }
     const third = await TestWs.connect(s.url);

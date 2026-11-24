@@ -32,6 +32,15 @@ export interface ServerConfig {
   /** Failed Pi registrations per IP per minute before that IP is blocked. */
   registrationFailuresPerMinute: number;
   registrationBlockMs: number;
+  /** A connection that hasn't said what it is (Pi or phone) by then is closed with 4013. */
+  firstMessageTimeoutMs: number;
+  /** A phone connection with no message for this long is closed. */
+  phoneIdleTimeoutMs: number;
+  /** Total sockets. Over the cap, new upgrades get HTTP 503. */
+  maxConnections: number;
+  /** Phone sockets. Kept below maxConnections so a flood of phones can't crowd out Pis. */
+  maxPhoneConnections: number;
+  maxPisPerIp: number;
 }
 
 function int(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
@@ -59,6 +68,11 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env, overrides
     messagesPerSecond: 5,
     registrationFailuresPerMinute: 5,
     registrationBlockMs: 5 * 60_000,
+    firstMessageTimeoutMs: int(env, 'FIRST_MESSAGE_TIMEOUT_MS', 10_000),
+    phoneIdleTimeoutMs: int(env, 'PHONE_IDLE_TIMEOUT_MS', 120_000),
+    maxConnections: int(env, 'MAX_CONNECTIONS', 800),
+    maxPhoneConnections: int(env, 'MAX_PHONE_CONNECTIONS', 600),
+    maxPisPerIp: int(env, 'MAX_PIS_PER_IP', 5),
     ...overrides,
   };
 }

@@ -18,6 +18,7 @@ export { createLogger, maskIp, shortId, type Logger } from './logger.js';
 export { InMemoryPresenceStore } from './presence/InMemoryPresenceStore.js';
 export type { PiConnection, PresenceStore } from './presence/PresenceStore.js';
 export { TokenBucket, IpRateLimiter } from './rateLimit.js';
+export { ipKey } from './ipKey.js';
 
 export interface SignalingServer {
   readonly port: number;
@@ -45,6 +46,8 @@ export function createSignalingServer(
     const path = (req.url ?? '/').split('?')[0];
     if (path !== '/ws') return rejectUpgrade(socket, 404);
     if (shuttingDown) return rejectUpgrade(socket, 503);
+    // Global cap, checked before the socket becomes a WebSocket at all.
+    if (hub.connections.size >= cfg.maxConnections) return rejectUpgrade(socket, 503);
     wss.handleUpgrade(req, socket, head, (ws) => hub.handleConnection(ws, clientIp(req, cfg.trustProxy)));
   });
 

@@ -21,6 +21,7 @@ import type { ServerConfig } from './config.js';
 import { maskIp, shortId, type Logger } from './logger.js';
 import type { PiConnection, PresenceStore } from './presence/PresenceStore.js';
 import { TokenBucket, type IpRateLimiter } from './rateLimit.js';
+import { ipKey } from './ipKey.js';
 
 interface PiState {
   deviceId: string;
@@ -44,6 +45,10 @@ interface PhoneState {
 interface Conn {
   ws: WebSocket;
   ip: string;
+  /** Grouping key for per-IP limits (IPv6 -> /64). */
+  ipKey: string;
+  /** Closes connections that never say what they are, and idle phones. */
+  timer?: NodeJS.Timeout;
   role: 'unknown' | 'pi' | 'phone';
   alive: boolean;
   bucket: TokenBucket;
@@ -63,8 +68,10 @@ export class SignalingHub {
   readonly connections = new Set<Conn>();
   /** peerId -> phone connection, for routing Pi replies (this instance only). */
   private readonly phones = new Map<string, Conn>();
-  /** Open phone connections per IP (for MAX_PHONES_PER_IP). */
+  /** Open phone / Pi connections per IP key (for MAX_PHONES_PER_IP / MAX_PIS_PER_IP). */
   private readonly phonesPerIp = new Map<string, number>();
+  private readonly pisPerIp = new Map<string, number>();
+  private phoneCount = 0;
   private keepalive?: NodeJS.Timeout;
 
   constructor(
@@ -88,6 +95,7 @@ export class SignalingHub {
     const conn: Conn = {
       ws,
       ip,
+      ipKey: ipKey(ip),
       role: 'unknown',
       alive: true,
       bucket: new TokenBucket(this.cfg.messageBurst, this.cfg.messagesPerSecond, this.now),
@@ -95,6 +103,10 @@ export class SignalingHub {
       queue: Promise.resolve(),
     };
     this.connections.add(conn);
+    // Say what you are (pi.hello / query / relay) soon, or go away.
+    conn.timer = setTimeout(() => {
+      if (conn.role === 'unknown') this.violation(conn, 'no first message in time');
+    }, this.cfg.firstMessageTimeoutMs);
 
     ws.on('pong', () => { conn.alive = true; });
     ws.on('message', (data, isBinary) => {
@@ -149,12 +161,35 @@ export class SignalingHub {
     if (conn.closed) return;
     conn.closed = true;
     if (conn.pi?.authTimer) clearTimeout(conn.pi.authTimer);
+    if (conn.timer) clearTimeout(conn.timer);
     conn.ws.close(code, reason);
+  }
+
+  /** Send a last message, then close once it has been flushed to the socket. */
+  private sendThenClose(conn: Conn, message: Record<string, unknown>, reason: string): void {
+    if (conn.closed) return;
+    conn.closed = true; // ignore anything else this socket sends
+    if (conn.timer) clearTimeout(conn.timer);
+    if (conn.ws.readyState !== WebSocket.OPEN) return;
+    conn.ws.send(JSON.stringify({ v: SIGNAL_PROTOCOL_VERSION, ...message }), () => conn.ws.close(1000, reason));
+  }
+
+  /** Total phone connections (for the global phone cap). */
+  get phoneConnections(): number {
+    return this.phoneCount;
+  }
+
+  private bump(map: Map<string, number>, key: string, delta: number): void {
+    const n = (map.get(key) ?? 0) + delta;
+    if (n <= 0) map.delete(key);
+    else map.set(key, n);
   }
 
   private async onClose(conn: Conn): Promise<void> {
     conn.closed = true;
     this.connections.delete(conn);
+    if (conn.timer) clearTimeout(conn.timer);
+    if (conn.role === 'pi') this.bump(this.pisPerIp, conn.ipKey, -1); // counted at pi.hello, even if rejected
     if (conn.pi) {
       if (conn.pi.authTimer) clearTimeout(conn.pi.authTimer);
       if (conn.pi.registered) {
@@ -165,9 +200,8 @@ export class SignalingHub {
     }
     if (conn.phone) {
       this.phones.delete(conn.phone.peerId);
-      const n = (this.phonesPerIp.get(conn.ip) ?? 1) - 1;
-      if (n <= 0) this.phonesPerIp.delete(conn.ip);
-      else this.phonesPerIp.set(conn.ip, n);
+      this.phoneCount--;
+      this.bump(this.phonesPerIp, conn.ipKey, -1);
     }
   }
 
@@ -221,6 +255,13 @@ export class SignalingHub {
 
   private onPiHello(conn: Conn, deviceId: string, publicKeyB64: string): void {
     conn.role = 'pi';
+    if (conn.timer) clearTimeout(conn.timer);
+    const pis = this.pisPerIp.get(conn.ipKey) ?? 0;
+    this.bump(this.pisPerIp, conn.ipKey, 1); // counted from pi.hello; uncounted on close
+    if (pis >= this.cfg.maxPisPerIp) {
+      this.log.warn('too many Pi connections from one IP', { ip: maskIp(conn.ip) });
+      return this.closeConn(conn, SignalCloseCode.RATE_LIMITED, 'too many connections');
+    }
     if (this.limiter.isRegistrationBlocked(conn.ip)) {
       this.log.warn('pi registration blocked for this IP', { ip: maskIp(conn.ip) });
       return this.closeConn(conn, SignalCloseCode.RATE_LIMITED, 'too many failed registrations');
@@ -280,33 +321,51 @@ export class SignalingHub {
   // ---- phones ----
 
   private becomePhone(conn: Conn): boolean {
-    const count = this.phonesPerIp.get(conn.ip) ?? 0;
-    if (count >= this.cfg.maxPhonesPerIp) {
-      this.log.warn('too many phone connections from one IP', { ip: maskIp(conn.ip) });
+    if (conn.timer) clearTimeout(conn.timer);
+    const count = this.phonesPerIp.get(conn.ipKey) ?? 0;
+    if (count >= this.cfg.maxPhonesPerIp || this.phoneCount >= this.cfg.maxPhoneConnections) {
+      this.log.warn('phone connection cap reached', { ip: maskIp(conn.ip), perIp: count >= this.cfg.maxPhonesPerIp });
       this.closeConn(conn, SignalCloseCode.RATE_LIMITED, 'too many connections');
       return false;
     }
     conn.role = 'phone';
     conn.phone = { peerId: randomBytes(16).toString('hex') };
     this.phones.set(conn.phone.peerId, conn);
-    this.phonesPerIp.set(conn.ip, count + 1);
+    this.phoneCount++;
+    this.bump(this.phonesPerIp, conn.ipKey, 1);
     return true;
+  }
+
+  /** Phones exist only to reach a Pi; an idle one is just holding a slot. */
+  private touchPhone(conn: Conn): void {
+    if (conn.timer) clearTimeout(conn.timer);
+    conn.timer = setTimeout(() => this.closeConn(conn, 1000, 'idle'), this.cfg.phoneIdleTimeoutMs);
   }
 
   private async onPhoneMessage(conn: Conn, msg: { type: 'query' | 'relay'; deviceId: string; payload?: string }): Promise<void> {
     const phone = conn.phone as PhoneState;
+    this.touchPhone(conn);
     // One connection, one Pi: stops a single socket from probing or spraying many Pis.
-    if (phone.target === undefined) phone.target = msg.deviceId;
+    const first = phone.target === undefined;
+    if (first) phone.target = msg.deviceId;
     if (phone.target !== msg.deviceId) return this.sendError(conn, 'target-mismatch', 'this connection is bound to another device');
 
     if (msg.type === 'query') {
-      this.send(conn, { type: 'status', deviceId: msg.deviceId, online: await this.presence.isOnline(msg.deviceId) });
+      const online = await this.presence.isOnline(msg.deviceId);
+      const status = { type: 'status', deviceId: msg.deviceId, online };
+      // A phone whose Pi is offline has no reason to stay: answer, then free the slot.
+      if (first && !online) return this.sendThenClose(conn, status, 'target offline');
+      this.send(conn, status);
       return;
     }
     const payload = msg.payload as string;
     if (payload.length > MAX_RELAY_PAYLOAD_CHARS) return this.sendError(conn, 'payload-too-large', 'payload too large');
     const pi = await this.presence.getConnection(msg.deviceId);
-    if (!pi) return this.sendError(conn, 'target-offline', 'that device is offline');
+    if (!pi) {
+      const error = { type: 'error', code: 'target-offline', message: 'that device is offline' };
+      if (first) return this.sendThenClose(conn, error, 'target offline');
+      return this.send(conn, error);
+    }
     pi.send({ v: SIGNAL_PROTOCOL_VERSION, type: 'relay', peerId: phone.peerId, payload });
   }
 }
