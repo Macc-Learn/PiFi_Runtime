@@ -34,6 +34,9 @@ Phase 1 has no phone, no internet and no WebRTC. The control API stands in for
 | `daemon.ts`, `index.ts` | Wiring and signal handling |
 | `identity.ts`, `pairing.ts`, `qr.ts` | Device keypair, one-time pairing codes, QR rendering |
 | `signalingClient.ts` | Outbound connection to the signaling server (Phase 2) |
+| `pairHandler.ts`, `pairedStore.ts` | Phone pairing and the paired-phones file (Phase 3) |
+| `sessions.ts`, `wireSession.ts`, `peer.ts` | Session handshake, data-channel router, WebRTC transport (Phase 3) |
+| `appStreams.ts` | Byte streams between PiFi and an app process (Phase 3) |
 
 `packages/protocol` holds the message shapes (shared by the runtime and the
 SDK). `packages/sdk` is the small library apps use.
@@ -177,6 +180,45 @@ The daemon starts the client *after* everything else is listening and never
 waits for it, so a missing or broken server can't stop apps from running.
 Incoming relays are dropped in Phase 2, except a dev-only echo
 (`PIFI_DEV=1`, payload `{"kind":"echo"}`) used by the test client.
+
+## Phones, sessions and the shell (Phase 3)
+
+```
+ phone (shell site)                         Raspberry Pi (PiFi daemon)
+ ┌───────────────────────┐   WebRTC data    ┌────────────────────────────────────┐
+ │ connection manager ───┼──── channel ─────┼─ sessions.ts ─ wireSession.ts ─┐   │
+ │  ▲  MessagePort       │  (direct, DTLS)  │   control ops (apps.*, phones.*)│   │
+ │ ┌┴─────────────────┐  │                  │   app requests/events/streams ──┼─► app processes
+ │ │ sandboxed iframe │  │   signaling      │ pairHandler.ts, pairedStore.ts  │   (localhost WS)
+ │ │ app page +       │  │  (only to pair   │ peer.ts (node-datachannel)      │   │
+ │ │ @pifi/client     │  │  and set up)     └────────────────────────────────────┘
+ │ └──────────────────┘  │
+ └───────────────────────┘
+```
+
+**Pairing** (once): the QR link carries the Pi's deviceId and a one-time secret.
+The phone makes a key for that Pi, proves it knows the secret with an HMAC, and
+the Pi proves it holds the key behind the deviceId by signing the phone's
+challenge. `pairHandler.ts` stores the phone's public key in `paired.json`.
+
+**A session** (every connection): `sessions.ts` answers `session.hello` with a
+challenge, checks the phone's signature over its offer's DTLS fingerprint, and
+only then asks `peer.ts` for a WebRTC peer connection. It signs its own answer's
+fingerprint the same way. When the data channel opens, `wireSession.ts` routes
+frames: control ops are handled by PiFi itself; `req` with an `app` becomes that
+app's Phase 1 `request {op, payload}`; app `event`s go to sessions that sent
+`sub`; streams are bridged to the app's localhost socket (`appStreams.ts`) as
+`[u32 sid][bytes]` binary frames, with half-close and backpressure (PiFi pauses
+reading an app's socket while a phone's channel is backed up).
+
+**The shell** (`packages/shell`) is a static site. Its `core/` folder has no UI
+and runs in Node too: the end-to-end test and `signal-testclient`'s fake phone
+use the very same pairing, session and wire code as phones. App pages run in a
+sandboxed frame; `frames.ts` hands each one a `MessagePort` and forwards its
+requests with `app` set by the shell, so a page can only ever reach its own app.
+
+Details: [wire-protocol.md](wire-protocol.md), [shell.md](shell.md),
+[app-frontends.md](app-frontends.md).
 
 ## Deliberate Phase 1 simplifications
 

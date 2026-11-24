@@ -122,6 +122,32 @@ They don't collide with the app-socket codes 4001–4005.
 - Per connection: 20 messages burst, 5/s sustained. Exceeding any limit closes with 4012.
 - IPs exist only in these in-memory counters and are swept when idle.
 
+## Hardening (Phase 3 Part A)
+
+| Rule | Default | Env |
+|---|---|---|
+| A connection must send its first message (`pi.hello` / `query` / `relay`) in time, or it is closed with 4013 | 10 s | `FIRST_MESSAGE_TIMEOUT_MS` |
+| A phone whose first `query` finds the Pi offline gets the `status`, then a `1000` close; a first `relay` to an offline Pi gets `target-offline`, then a close. (The shell retries with a new connection every ≥ 5 s.) | | |
+| A phone connection with no message for this long is closed | 120 s | `PHONE_IDLE_TIMEOUT_MS` |
+| Total sockets; over the cap, new upgrades get HTTP 503 | 800 | `MAX_CONNECTIONS` |
+| Phone sockets; kept below the total so phones can't crowd out Pis | 600 | `MAX_PHONE_CONNECTIONS` |
+| Pi connections per IP | 5 | `MAX_PIS_PER_IP` |
+
+All per-IP limits (connection rate, phones, Pis, registration failures) key
+**IPv6 addresses by their /64** (one home or phone usually owns a whole /64);
+IPv4 stays per address. Logs still show masked IPs only.
+
+### Abuse model
+
+Anyone can generate a valid P-256 key in milliseconds, so "only real Pis may
+register" is not enforceable: a registration only proves possession of *some*
+key, and a deviceId is just its hash. There is no allowlist, and there can't be
+one without accounts. The defence is **caps and short lifetimes**: per-IP and
+global connection caps, a reserved share of slots for Pis, first-message and
+idle timeouts, rate limits, and closing phones that have nothing to talk to.
+An attacker can still use their share of the capacity; they can't take
+everyone's, and they can't impersonate a real Pi (that needs its private key).
+
 ## Running it locally
 
 ```bash
@@ -133,5 +159,5 @@ npm run -s signal-testclient -- status <deviceId> --url ws://localhost:8080/ws
 npm run -s signal-testclient -- echo <deviceId> --url ws://localhost:8080/ws --data hello
 ```
 
-`echo` only gets an answer with `PIFI_DEV=1`. In Phase 2 the Pi drops every other relay;
-authenticated handling of phone messages arrives in Phase 3.
+`echo` only gets an answer with `PIFI_DEV=1`. Since Phase 3 the Pi also answers
+pairing and session handshakes over the relay: see [wire-protocol.md](wire-protocol.md).

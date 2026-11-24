@@ -19,7 +19,8 @@
     "signal-server": "node packages/server/dist/src/index.js",
     "signal-testclient": "node packages/signal-testclient/dist/src/testclient.js",
     "build:shell": "npm run -s build -w @pifi/shell && node examples/echo-app/frontend/build.mjs packages/shell/dist/examples/echo",
-    "typecheck:shell": "tsc -p packages/shell/tsconfig.json"
+    "typecheck:shell": "tsc -p packages/shell/tsconfig.json",
+    "smoke:browser": "node scripts/browser-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

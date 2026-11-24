@@ -1,0 +1,62 @@
+# Builds the PiFi shell (and the echo example's front-end) and publishes them to GitHub Pages.
+#
+# One-time setup (see docs/deploy-shell-pages.md):
+#   Settings -> Pages -> Source: "GitHub Actions"
+#   Settings -> Secrets and variables -> Actions -> Variables:
+#     PIFI_SIGNAL_URL   wss://<your signaling server>/ws          (required)
+#     PIFI_ICE_SERVERS  ["stun:stun.l.google.com:19302"]          (optional)
+name: Deploy shell to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check configuration
+        env:
+          PIFI_SIGNAL_URL: ${{ vars.PIFI_SIGNAL_URL }}
+        run: |
+          case "$PIFI_SIGNAL_URL" in
+            wss://*) echo "signaling: $PIFI_SIGNAL_URL" ;;
+            *) echo "::error::Set the repository variable PIFI_SIGNAL_URL to a wss:// URL"; exit 1 ;;
+          esac
+      - run: npm ci
+      - run: npm run build
+      - name: Build shell + echo front-end
+        env:
+          VITE_SIGNAL_URL: ${{ vars.PIFI_SIGNAL_URL }}
+          VITE_ICE_SERVERS: ${{ vars.PIFI_ICE_SERVERS || '["stun:stun.l.google.com:19302"]' }}
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build:shell
+      - run: npm run -s test -w @pifi/shell
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/shell/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

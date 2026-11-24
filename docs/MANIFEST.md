@@ -17,7 +17,8 @@ manifest; the directory is **not** a manifest field.
   "restart": { "policy": "on-crash", "maxRestarts": 3, "windowSec": 60 },
   "startTimeoutMs": 15000,
   "env": {},
-  "frontend": "https://example.com/echo",
+  "frontend": "https://example.com/echo/",
+  "displayName": "Echo",
   "hash": "sha256-…"
 }
 ```
@@ -37,7 +38,8 @@ manifest; the directory is **not** a manifest field.
 | `restart.windowSec` | no | `60` | Length of the window. Backoff is 1 s, 2 s, 4 s… |
 | `startTimeoutMs` | no | `15000` | Time allowed to reach `ready`. |
 | `env` | no | `{}` | Extra environment variables (string → string). `PIFI_*` can't be overridden. |
-| `frontend` | no | | Informational for now (future: allowed front-end origin). |
+| `frontend` | no | | The app's own web page, opened by the shell in a sandboxed frame. Must be `https:`; `http://localhost` / `http://127.0.0.1` only with `PIFI_DEV=1`. See [app-frontends.md](app-frontends.md). |
+| `displayName` | no | | Name shown on phones, up to 40 characters (defaults to `name`). |
 | `hash` | outside `--dev` | | See below. |
 
 Unknown fields are **rejected**, so a typo like `autostrat` is an error rather

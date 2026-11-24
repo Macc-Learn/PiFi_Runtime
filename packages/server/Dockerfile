@@ -18,6 +18,8 @@ COPY packages/server/package.json packages/server/
 COPY packages/runtime/package.json packages/runtime/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/signal-testclient/package.json packages/signal-testclient/
+COPY packages/client/package.json packages/client/
+COPY packages/shell/package.json packages/shell/
 RUN npm ci --workspace=@pifi/server --include-workspace-root
 COPY packages/protocol/tsconfig.json packages/protocol/
 COPY packages/protocol/src packages/protocol/src
@@ -35,6 +37,8 @@ COPY packages/server/package.json packages/server/
 COPY packages/runtime/package.json packages/runtime/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/signal-testclient/package.json packages/signal-testclient/
+COPY packages/client/package.json packages/client/
+COPY packages/shell/package.json packages/shell/
 RUN npm ci --omit=dev --workspace=@pifi/server && npm cache clean --force
 COPY --from=build /app/packages/protocol/dist/src packages/protocol/dist/src
 COPY --from=build /app/packages/server/dist/src packages/server/dist/src

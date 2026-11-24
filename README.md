@@ -6,19 +6,26 @@ Your Pi dials out to a small signaling server, and your phone connects to it dir
 
 > **Experimental, not security-audited.** See [SECURITY.md](SECURITY.md).
 
-**Status: Phase 2.**
+**Status: Phase 3.**
 
 - **Phase 1:** app-management core (registry, supervision, control API, CLI, SDK).
 - **Phase 1 revision:** device identity (ECDSA P-256 key, `deviceId`) and pairing QR codes.
 - **Phase 2:** a signaling server (`packages/server`), the Pi's outbound signaling client,
   and a fake-phone CLI (`packages/signal-testclient`). A Pi is now reachable *as online*
   without opening any port.
+- **Phase 3:** phones pair by scanning the QR, then connect **directly** to the Pi
+  over WebRTC (signed handshake bound to the DTLS fingerprints). The shell site
+  (`packages/shell`) shows the Pi's apps, starts and stops them, manages paired
+  phones, and opens each app's own web page in a sandboxed frame; app pages use
+  `@pifi/client`. Apps gained events and byte streams. The signaling server was hardened.
 
-Not built yet: WebRTC, phone authentication to the Pi, TURN, `pifi-client`, the
-front-end shell site, the files app, GPIO, Wi-Fi provisioning.
+Not built yet: TURN relay, roles/permissions, an app lock, the files app (it will
+be its own repo), a custom domain, GPIO, Wi-Fi provisioning.
 
 Docs: [ARCHITECTURE](docs/ARCHITECTURE.md) (how the code works) ·
 [MANIFEST](docs/MANIFEST.md) · [signaling](docs/signaling.md) ·
+[wire protocol](docs/wire-protocol.md) · [shell](docs/shell.md) ·
+[app front-ends](docs/app-frontends.md) · [Pages deploy](docs/deploy-shell-pages.md) ·
 [Cloud Run deploy](docs/deploy-cloud-run.md) · [Pi + systemd](docs/deploy-pi-systemd.md)
 
 ## Requirements
@@ -75,6 +82,33 @@ $ pifi stop echo
 { "name": "echo", "state": "stopped", ... }
 ```
 
+### Phase 3: pair a phone and connect directly
+
+```bash
+npm run build
+PORT=8080 npm run signal-server                                         # terminal 1
+PIFI_DEV=1 PIFI_SIGNAL_URL=ws://localhost:8080/ws pifi daemon            # terminal 2
+
+# terminal 3: a fake phone that runs the shell's own code in Node
+LINK=$(pifi pair --json | node -pe 'JSON.parse(require("fs").readFileSync(0)).link')
+npm run -s signal-testclient -- pair "$LINK" --url ws://localhost:8080/ws
+npm run -s signal-testclient -- apps --url ws://localhost:8080/ws
+npm run -s signal-testclient -- call apps.start '{"name":"echo"}' --url ws://localhost:8080/ws
+npm run -s signal-testclient -- call echo '{"hi":1}' --app echo --url ws://localhost:8080/ws
+pifi devices list
+```
+
+With a real phone, build the shell for your signaling server and serve it
+(`VITE_SIGNAL_URL=wss://… npm run build:shell`, then host `packages/shell/dist`
+over https), or publish it with the Pages workflow
+([docs/deploy-shell-pages.md](docs/deploy-shell-pages.md)), and scan the QR
+from `pifi pair --frontend https://your-shell-host`. A phone needs to reach
+the signaling server over `wss://`, and the shell must be served over https
+(or from localhost) for WebCrypto to be available.
+
+`npm run smoke:browser` runs the whole flow in headless Chromium on this
+machine (needs Playwright + Chromium).
+
 ### CLI reference
 
 | Command | What it does |
@@ -90,6 +124,8 @@ $ pifi stop echo
 | `pifi status [--json]` | Device ID, memory, **signaling state**, apps |
 | `pifi identity [--json]` | Device ID + public key (never the private key) |
 | `pifi pair [--ttl N] [--frontend URL] [--json] [--no-qr] [--cancel]` | One-time pairing code as a QR + link |
+| `pifi devices list [--json]` | Paired phones (connected now? last seen) |
+| `pifi devices revoke <id-prefix or label>` | Unpair a phone; its live session closes immediately |
 
 ### Identity and pairing
 
@@ -104,8 +140,8 @@ pifi pair --frontend https://your-shell-site.example   # or set PIFI_FRONTEND_UR
 `pifi pair` prints a QR code for `<frontend>/pair#id=<deviceId>&s=<secret>`.
 The secret is one-time, lives only in daemon memory, and expires (default 10 min,
 `PIFI_PAIR_TTL_SEC`, max 3600). Anyone who sees the QR before it expires can pair,
-so `clear` the terminal afterwards. Phase 1 only *shows* the code; phones verify
-it in Phase 3.
+so `clear` the terminal afterwards. The command prints "Open this on https://…":
+make sure that is the host you expect.
 
 ### Signaling (Phase 2)
 
@@ -137,7 +173,12 @@ admin.token>`) offers the same operations over HTTP.
 | Signaling server | unset (disabled) | `PIFI_SIGNAL_URL` (`ws://` / `wss://`) |
 | Signaling ping / backoff | 25 s / 1 s → 30 s | `PIFI_SIGNAL_PING_MS`, `PIFI_SIGNAL_BACKOFF_MIN_MS`, `PIFI_SIGNAL_BACKOFF_MAX_MS` |
 | Pairing code lifetime | 600 s | `PIFI_PAIR_TTL_SEC` (max 3600) |
-| Pair link base (CLI) | `https://pifi.example` | `PIFI_FRONTEND_URL` |
+| Pair link base (CLI) | `https://macc-learn.github.io/PiFi_Runtime` | `PIFI_FRONTEND_URL` |
+| STUN/TURN for phone sessions | `["stun:stun.l.google.com:19302"]` | `PIFI_ICE_SERVERS` (JSON array) |
+| Concurrent phone sessions | 5 | `PIFI_MAX_SESSIONS` |
+| Paired phones | 10 | `PIFI_MAX_PAIRED_PHONES` |
+| Name shown on phones | hostname | `PIFI_DEVICE_NAME` |
+| Idle session timeout | 45 s | `PIFI_SESSION_IDLE_SEC` |
 
 ## Production mode (hashes enforced)
 
@@ -185,7 +226,9 @@ packages/protocol          message types, zod schemas, shared crypto (deviceId, 
 packages/sdk               @pifi/sdk, helper for app authors
 packages/runtime           the daemon, CLI and tests
 packages/server            the signaling server (+ Dockerfile)
-packages/signal-testclient fake phone CLI + end-to-end test
+packages/signal-testclient fake phone CLI (runs the shell core in Node) + end-to-end tests
+packages/shell             the phone web app (Vite + Preact), GitHub Pages workflow in .github/
+packages/client            @pifi/client, for app pages inside the shell
 examples/echo-app   happy-path demo
 examples/test-fixtures/   deliberately misbehaving apps used by the tests
 docs/               ARCHITECTURE.md, MANIFEST.md

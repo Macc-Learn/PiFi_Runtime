@@ -11,3 +11,4 @@ admin.token
 *.log
 dist-core/
 examples/echo-app/frontend/dist/
+fake-phone.json

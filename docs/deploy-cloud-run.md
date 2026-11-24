@@ -55,6 +55,11 @@ Point Pis at `wss://<your-service-url>/ws`.
 | `TRUST_PROXY` | off | `1`: take the client IP from the **last** `X-Forwarded-For` entry (the one the platform appended). Verify Cloud Run's current header format. |
 | `MAX_PHONES_PER_IP` | 20 | |
 | `LOG_LEVEL` | info | JSON lines; Cloud Run maps `severity` to log levels |
+| `FIRST_MESSAGE_TIMEOUT_MS` | 10000 | unidentified sockets are closed after this |
+| `PHONE_IDLE_TIMEOUT_MS` | 120000 | idle phone sockets are closed |
+| `MAX_CONNECTIONS` | 800 | total sockets (503 above it) |
+| `MAX_PHONE_CONNECTIONS` | 600 | the rest is reserved for Pis |
+| `MAX_PIS_PER_IP` | 5 | |
 
 ## 3. Why these settings
 
