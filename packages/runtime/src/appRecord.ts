@@ -15,6 +15,7 @@ import type { WriteStream } from 'node:fs';
 import type { WebSocket } from 'ws';
 import type { Manifest } from './registry.js';
 import { Router } from './router.js';
+import type { AppStreams } from './appStreams.js';
 
 export type AppState = 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed' | 'failed';
 
@@ -51,6 +52,12 @@ export interface AppRecord {
   lastExit?: { code: number | null; signal: string | null; at: number };
   failReason?: string;
   ws?: WebSocket;
+  /** Declared in the app's hello (e.g. "streams"); reset per connection. */
+  capabilities: Set<string>;
+  /** Open byte streams with this app (only if it declared "streams"). */
+  streams?: AppStreams;
+  /** Who currently wants this app's socket paused (backpressure from slow phones). */
+  pausedBy: Set<string>;
   router: Router;
   logTail: string[];
 
@@ -78,6 +85,8 @@ export function newRecord(manifest: Manifest, dir: string): AppRecord {
     restartTimes: [],
     restartCount: 0,
     router: new Router(),
+    capabilities: new Set(),
+    pausedBy: new Set(),
     logTail: [],
     stopRequested: false,
     stopTimers: [],
@@ -90,6 +99,9 @@ export interface AppInfo {
   name: string;
   version: string;
   description?: string;
+  displayName?: string;
+  /** The app's own static web page (shown inside the shell's sandboxed frame). */
+  frontend?: string;
   state: AppState;
   pid?: number;
   port?: number;
@@ -105,6 +117,8 @@ export function toInfo(rec: AppRecord, now = Date.now()): AppInfo {
     name: rec.name,
     version: rec.manifest.version,
     description: rec.manifest.description,
+    displayName: rec.manifest.displayName,
+    frontend: rec.manifest.frontend,
     state: rec.state,
     pid: rec.pid,
     port: rec.port,

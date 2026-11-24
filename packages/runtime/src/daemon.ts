@@ -133,7 +133,7 @@ export class Daemon {
 
   /** Re-scan registered-apps/. Bad manifests are reported but never stop the others. */
   async reload(): Promise<{ apps: number; errors: Array<{ dir: string; error: string }> }> {
-    const scan = await loadRegistry(this.config.home);
+    const scan = await loadRegistry(this.config.home, { dev: this.config.dev });
     for (const e of scan.errors) this.log.error(`skipping ${path.basename(e.dir)}: ${e.error}`);
     this.manager.syncRegistry(scan.entries);
     this.log.info(`registry: ${scan.entries.length} app(s) loaded, ${scan.errors.length} rejected`);

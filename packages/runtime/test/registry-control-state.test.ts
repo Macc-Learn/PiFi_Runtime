@@ -236,7 +236,7 @@ test('Router correlates responses by id, times out, and rejects all on demand', 
   assert.equal(await b.promise, 'B');
   assert.equal(r.settle('unknown', { payload: 1 }), false);
   r.settle(a.id, { error: { code: 'X', message: 'boom' } });
-  await assert.rejects(a.promise, /X: boom/);
+  await assert.rejects(a.promise, (e: unknown) => e instanceof Error && e.message === 'boom' && (e as { appCode?: string }).appCode === 'X');
 
   const slow = r.create(20);
   await assert.rejects(slow.promise, /no response within 20 ms/);

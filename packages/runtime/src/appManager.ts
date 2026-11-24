@@ -14,7 +14,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { WebSocket } from 'ws';
-import { encode, PROTOCOL_VERSION, type AppMessage } from '@pifi/protocol';
+import { encode, PROTOCOL_VERSION, STREAMS_CAPABILITY, CloseCode, type AppMessage } from '@pifi/protocol';
+import { AppStreams, DEFAULT_APP_STREAM_OPTIONS, type AppStreamHandle, type AppStreamOptions, type StreamEndpoint } from './appStreams.js';
 import type { Config } from './config.js';
 import { PifiError } from './errors.js';
 import type { Logger } from './logger.js';
@@ -33,6 +34,7 @@ export interface AppManagerDeps {
   /** Called when the USER asks for an app to run/stop, so the daemon can persist it. */
   onDesiredChange?: (name: string, desired: Desired) => void;
   pids?: PidStore;
+  streamOptions?: Partial<AppStreamOptions>;
 }
 
 export interface StartOptions {
@@ -346,6 +348,7 @@ export class AppManager extends EventEmitter {
     rec.ws = undefined;
     if (ws && ws.readyState !== WebSocket.CLOSED) ws.terminate();
     rec.router.rejectAll(new PifiError('APP_EXITED', `${rec.name} exited while a request was pending`, 502));
+    this.dropStreams(rec, 'app exited');
     rec.logStream?.end();
     rec.logStream = undefined;
     this.deps.pids?.remove(rec.name);
@@ -456,13 +459,13 @@ export class AppManager extends EventEmitter {
   // Requests (control API today, phone commands later)
   // -------------------------------------------------------------------------
 
-  async request(name: string, payload: unknown, timeoutMs = this.config.requestTimeoutMs): Promise<unknown> {
+  async request(name: string, payload: unknown, timeoutMs = this.config.requestTimeoutMs, session?: string): Promise<unknown> {
     const rec = this.mustGet(name);
     if (rec.state !== 'running' || !rec.ws || rec.ws.readyState !== WebSocket.OPEN) {
       throw new PifiError('NOT_RUNNING', `${name} is not running (state: ${rec.state})`, 409);
     }
     const { id, promise } = rec.router.create(timeoutMs);
-    this.send(rec, { v: PROTOCOL_VERSION, type: 'request', id, payload });
+    this.send(rec, { v: PROTOCOL_VERSION, type: 'request', id, payload, ...(session ? { session } : {}) });
     return promise;
   }
 
@@ -483,9 +486,23 @@ export class AppManager extends EventEmitter {
     return 'ok';
   }
 
-  attachSocket(name: string, ws: WebSocket): void {
+  attachSocket(name: string, ws: WebSocket, capabilities: readonly string[] = []): void {
     const rec = this.mustGet(name);
     rec.ws = ws;
+    rec.capabilities = new Set(capabilities);
+    if (rec.capabilities.has(STREAMS_CAPABILITY)) {
+      rec.streams = new AppStreams(
+        name,
+        {
+          send: (m) => this.send(rec, m),
+          sendBinary: (frame) => { if (ws.readyState === WebSocket.OPEN) ws.send(frame); },
+          bufferedAmount: () => ws.bufferedAmount,
+        },
+        { ...DEFAULT_APP_STREAM_OPTIONS, ...this.deps.streamOptions },
+        this.log,
+        (req) => this.emit('appStreamOpen', name, req),
+      );
+    }
     this.send(rec, { v: PROTOCOL_VERSION, type: 'welcome', payload: { name } });
   }
 
@@ -494,6 +511,43 @@ export class AppManager extends EventEmitter {
     if (!rec || rec.ws !== ws) return;
     rec.ws = undefined;
     rec.router.rejectAll(new PifiError('APP_EXITED', `${name} disconnected while a request was pending`, 502));
+    this.dropStreams(rec, 'app disconnected');
+  }
+
+  private dropStreams(rec: AppRecord, reason: string): void {
+    rec.streams?.closeAll(reason);
+    rec.streams = undefined;
+    rec.capabilities = new Set();
+    rec.pausedBy.clear();
+  }
+
+  /** Binary frames are stream data; only apps that declared "streams" may send them. */
+  onAppBinary(name: string, ws: WebSocket, frame: Uint8Array): void {
+    const rec = this.records.get(name);
+    if (!rec || rec.ws !== ws) return;
+    if (!rec.streams) return void ws.close(CloseCode.PROTOCOL_VIOLATION, 'text frames only');
+    if (!rec.streams.onBinary(frame)) this.log.debug(`"${name}" sent stream data for an unknown stream`);
+  }
+
+  /** Open a byte stream to an app (e.g. a phone uploading). */
+  openStream(name: string, op: string, meta: unknown, endpoint: StreamEndpoint): Promise<AppStreamHandle> {
+    const rec = this.mustGet(name);
+    if (rec.state !== 'running' || !rec.ws) throw new PifiError('NOT_RUNNING', `${name} is not running`, 409);
+    if (!rec.streams) throw new PifiError('BAD_REQUEST', `${name} does not support streams`, 400);
+    return rec.streams.open(op, meta, endpoint);
+  }
+
+  /**
+   * Backpressure towards a slow phone: pause reading from the app's socket while
+   * any `key` (a session) asks for it, so TCP pushes back on the app.
+   */
+  setPaused(name: string, key: string, paused: boolean): void {
+    const rec = this.records.get(name);
+    if (!rec?.ws) return;
+    if (paused) rec.pausedBy.add(key);
+    else rec.pausedBy.delete(key);
+    if (rec.pausedBy.size > 0 && !rec.ws.isPaused) rec.ws.pause();
+    if (rec.pausedBy.size === 0 && rec.ws.isPaused) rec.ws.resume();
   }
 
   onAppMessage(name: string, ws: WebSocket, msg: AppMessage): void {
@@ -524,6 +578,14 @@ export class AppManager extends EventEmitter {
         break;
       case 'hello':
         break; // rejected earlier by the local server
+      case 'stream.open':
+      case 'stream.accept':
+      case 'stream.reject':
+      case 'stream.end':
+      case 'stream.abort':
+        if (!rec.streams) return void ws.close(CloseCode.PROTOCOL_VIOLATION, 'streams not declared in hello');
+        rec.streams.onMessage(msg);
+        break;
     }
   }
 }

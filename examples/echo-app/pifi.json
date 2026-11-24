@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "description": "Echoes requests back",
   "command": "node",
-  "args": ["index.js"],
+  "args": [
+    "index.js"
+  ],
   "memoryMB": 60,
   "needsPort": false,
   "autostart": false,
-  "restart": { "policy": "on-crash", "maxRestarts": 3, "windowSec": 60 },
+  "restart": {
+    "policy": "on-crash",
+    "maxRestarts": 3,
+    "windowSec": 60
+  },
   "startTimeoutMs": 15000,
   "env": {},
-  "frontend": "https://example.com/echo"
+  "frontend": "https://macc-learn.github.io/PiFi_Runtime/examples/echo/",
+  "displayName": "Echo"
 }

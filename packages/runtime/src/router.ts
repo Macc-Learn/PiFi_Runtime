@@ -45,7 +45,7 @@ export class Router {
     clearTimeout(entry.timer);
     this.pending.delete(id);
     if (result.error) {
-      entry.reject(new PifiError('APP_ERROR', `${result.error.code}: ${result.error.message}`, 502));
+      entry.reject(new PifiError('APP_ERROR', result.error.message, 502, result.error.code));
     } else {
       entry.resolve(result.payload);
     }

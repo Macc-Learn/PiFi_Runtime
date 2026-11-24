@@ -133,6 +133,8 @@ const RequestSchema = z.object({
   type: z.literal('request'),
   id: IdSchema,
   payload: z.unknown().optional(),
+  /** Phase 3: opaque id of the phone session that sent it (lets the app open a stream back). */
+  session: z.string().max(64).optional(),
 });
 
 const ShutdownSchema = z.object({

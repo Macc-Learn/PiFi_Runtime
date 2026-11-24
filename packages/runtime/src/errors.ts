@@ -24,6 +24,8 @@ export class PifiError extends Error {
     public readonly code: ErrorCode,
     message: string,
     public readonly status: number = 500,
+    /** For APP_ERROR: the error code the app itself reported. */
+    public readonly appCode?: string,
   ) {
     super(message);
     this.name = 'PifiError';

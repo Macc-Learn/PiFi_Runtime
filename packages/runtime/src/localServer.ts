@@ -18,6 +18,11 @@ import type { AppManager } from './appManager.js';
 import type { Config } from './config.js';
 import type { Logger } from './logger.js';
 
+function rawToBuffer(data: RawData): Buffer {
+  if (Array.isArray(data)) return Buffer.concat(data);
+  return Buffer.isBuffer(data) ? data : Buffer.from(data);
+}
+
 function rawToString(data: RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
   if (Buffer.isBuffer(data)) return data.toString('utf8');
@@ -84,7 +89,11 @@ export class LocalServer {
 
     ws.on('message', (data, isBinary) => {
       if (closing) return;
-      if (isBinary) return closeWith(CloseCode.PROTOCOL_VIOLATION, 'text frames only');
+      if (isBinary) {
+        // Stream data. Only after hello, and only from apps that declared "streams".
+        if (!appName) return closeWith(CloseCode.PROTOCOL_VIOLATION, 'text frames only');
+        return this.manager.onAppBinary(appName, ws, new Uint8Array(rawToBuffer(data)));
+      }
       const parsed = parseAppMessage(rawToString(data));
       if (!parsed.ok) return closeWith(CloseCode.PROTOCOL_VIOLATION, parsed.reason.slice(0, 100));
       const msg = parsed.message;
@@ -97,7 +106,7 @@ export class LocalServer {
         if (verdict === 'bad-token') return closeWith(CloseCode.BAD_TOKEN, 'bad token'); // never echo the token
         if (verdict === 'duplicate') return closeWith(CloseCode.DUPLICATE_CONNECTION, 'already connected');
         appName = msg.payload.name;
-        this.manager.attachSocket(appName, ws);
+        this.manager.attachSocket(appName, ws, msg.payload.capabilities ?? []);
         return;
       }
 

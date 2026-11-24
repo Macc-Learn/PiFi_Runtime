@@ -35,7 +35,9 @@ export const ManifestSchema = z
       .default({ policy: 'on-crash', maxRestarts: 3, windowSec: 60 }),
     startTimeoutMs: z.number().int().positive().optional(),
     env: z.record(z.string(), z.string()).default({}),
-    frontend: z.string().url().optional(),
+    /** The app's static web page. https: only (http://localhost / 127.0.0.1 allowed in dev). */
+    frontend: z.string().url().max(500).optional(),
+    displayName: z.string().min(1).max(40).optional(),
     hash: z
       .string()
       .regex(/^sha256-[0-9a-f]{64}$/, 'must look like sha256-<64 hex chars>')
@@ -66,8 +68,25 @@ export function registeredAppsDir(home: string): string {
   return path.join(home, 'registered-apps');
 }
 
+/**
+ * The front-end URL is shown inside the phone's shell, so it must be https.
+ * Plain http is only allowed for localhost while developing.
+ */
+export function frontendProblem(frontend: string | undefined, dev: boolean): string | undefined {
+  if (frontend === undefined) return undefined;
+  let url: URL;
+  try {
+    url = new URL(frontend);
+  } catch {
+    return 'frontend is not a valid URL';
+  }
+  if (url.protocol === 'https:') return undefined;
+  if (dev && url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) return undefined;
+  return dev ? 'frontend must be https: (or http://localhost / http://127.0.0.1 in dev)' : 'frontend must be an https: URL';
+}
+
 /** Scan `registered-apps/*` and validate every manifest. Never throws for a bad app. */
-export async function loadRegistry(home: string): Promise<RegistryScan> {
+export async function loadRegistry(home: string, opts: { dev?: boolean } = {}): Promise<RegistryScan> {
   const root = registeredAppsDir(home);
   const entries: RegistryEntry[] = [];
   const errors: RegistryError[] = [];
@@ -93,6 +112,8 @@ export async function loadRegistry(home: string): Promise<RegistryScan> {
       if (parsed.data.name !== dirent.name) {
         throw new Error(`manifest name "${parsed.data.name}" does not match its folder "${dirent.name}"`);
       }
+      const bad = frontendProblem(parsed.data.frontend, opts.dev === true);
+      if (bad) throw new Error(`invalid manifest: ${bad}`);
       entries.push({ manifest: parsed.data, dir });
     } catch (err) {
       errors.push({ dir, error: err instanceof Error ? err.message : String(err) });
