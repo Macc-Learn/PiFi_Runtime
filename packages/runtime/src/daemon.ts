@@ -15,7 +15,12 @@ import { createMemoryReader, type MemoryReader } from './resources.js';
 import { killStalePids, PidStore, StateStore } from './state.js';
 import { loadOrCreateIdentity, type Identity } from './identity.js';
 import { PairingManager } from './pairing.js';
-import { SignalingClient, type SignalingClientOptions, type SignalingState } from './signalingClient.js';
+import { SignalingClient, type RelayMessage, type SignalingClientOptions, type SignalingState } from './signalingClient.js';
+import { decodeRelayBody, encodeRelayBody, PhoneToPiBodySchema, type PhoneToPiBody, type PiToPhoneBody } from '@pifi/protocol';
+import { PairedStore } from './pairedStore.js';
+import { PairHandler } from './pairHandler.js';
+import { NdcPeerTransport, shutdownPeerLibrary, type PeerTransportFactory } from './peer.js';
+import { SessionManager } from './sessions.js';
 
 export const VERSION = '0.1.0';
 
@@ -26,6 +31,10 @@ export interface DaemonOptions {
   readMemory?: MemoryReader;
   /** Tests tweak signaling timings/clock/randomness here. */
   signaling?: Partial<Omit<SignalingClientOptions, 'identity' | 'log'>>;
+  /** Tests swap in FakePeerTransport here. */
+  transportFactory?: PeerTransportFactory;
+  /** Phone -> app request timeout (default 30 s). */
+  appRequestTimeoutMs?: number;
 }
 
 export class Daemon {
@@ -43,6 +52,11 @@ export class Daemon {
   private readonly signalingOverrides: DaemonOptions['signaling'];
   /** Pairing codes live in daemon memory only. */
   readonly pairing: PairingManager;
+  readonly paired: PairedStore;
+  private _sessions?: SessionManager;
+  private pairHandler?: PairHandler;
+  private readonly transportFactory: PeerTransportFactory;
+  private readonly appRequestTimeoutMs?: number;
 
   constructor(opts: DaemonOptions) {
     this.config = opts.config;
@@ -60,6 +74,50 @@ export class Daemon {
     this.localServer = new LocalServer(this.config, this.manager, this.log);
     this.pairing = new PairingManager({ defaultTtlSec: this.config.pairTtlSec });
     this.signalingOverrides = opts.signaling;
+    this.paired = new PairedStore(this.config.home, this.config.maxPairedPhones, this.log);
+    this.transportFactory = opts.transportFactory ?? (() => new NdcPeerTransport());
+    this.appRequestTimeoutMs = opts.appRequestTimeoutMs;
+  }
+
+  get sessions(): SessionManager {
+    if (!this._sessions) throw new Error('daemon not started');
+    return this._sessions;
+  }
+
+  /** What the shell's `status` control op shows. */
+  private async deviceStatus(): Promise<Record<string, unknown>> {
+    const s = await this.manager.status();
+    return {
+      deviceId: this.identity.deviceId,
+      deviceName: this.config.deviceName,
+      version: VERSION,
+      memoryAvailableMB: s.memory.availableMB,
+      runningApps: s.apps.filter((a) => a.state === 'running').length,
+    };
+  }
+
+  /**
+   * A relay from a phone (via the signaling server). Decoded and validated here;
+   * anything that isn't a known body is dropped. Bodies are never logged.
+   */
+  private async onRelay({ peerId, payload }: RelayMessage): Promise<void> {
+    const body = decodeRelayBody(PhoneToPiBodySchema, payload);
+    if (!body) return;
+    const reply = await this.handlePhoneBody(peerId, body);
+    this.signaling?.relay(peerId, encodeRelayBody(reply));
+  }
+
+  /** Answer one validated phone body (pairing or session handshake). Public for tests. */
+  async handlePhoneBody(peerId: string, body: PhoneToPiBody): Promise<PiToPhoneBody> {
+    if (!this._sessions || !this.pairHandler) throw new Error('daemon not started');
+    switch (body.k) {
+      case 'pair.request':
+        return this.pairHandler.handle(body);
+      case 'session.hello':
+        return this._sessions.hello(peerId, body.phoneId, body.np);
+      case 'session.offer':
+        return this._sessions.offer(peerId, body.sdp, body.sig);
+    }
   }
 
   get identity(): Identity {
@@ -88,6 +146,20 @@ export class Daemon {
     this.adminToken = await loadOrCreateAdminToken(home);
     // Refuses to start (throws) if the key pair is incomplete or mismatched; never regenerates silently.
     this._identity = await loadOrCreateIdentity(home, this.log);
+    await this.paired.load();
+    this.pairHandler = new PairHandler(this._identity, this.pairing, this.paired, this.log);
+    this._sessions = new SessionManager({
+      identity: this._identity,
+      paired: this.paired,
+      manager: this.manager,
+      transportFactory: this.transportFactory,
+      iceServers: this.config.iceServers,
+      maxSessions: this.config.maxSessions,
+      idleMs: this.config.sessionIdleSec * 1000,
+      log: this.log,
+      status: () => this.deviceStatus(),
+      appRequestTimeoutMs: this.appRequestTimeoutMs,
+    });
     await killStalePids(this.pids, this.log);
     await this.state.load();
     await this.reload();
@@ -107,6 +179,13 @@ export class Daemon {
         identity: this._identity,
         pairing: this.pairing,
         signalingState: () => this.signalingState(),
+        phones: () => this.sessions.listPhones(),
+        revokePhone: (query) => {
+          const phone = this.paired.resolve(query);
+          this.sessions.revoke(phone.phoneId);
+          return phone.phoneId;
+        },
+        sessionCount: () => this.sessions.count,
       },
       this.log,
     );
@@ -125,6 +204,9 @@ export class Daemon {
       backoffMinMs: this.config.signalBackoffMinMs,
       backoffMaxMs: this.config.signalBackoffMaxMs,
       ...this.signalingOverrides,
+    });
+    this.signaling.on('relay', (m: RelayMessage) => {
+      this.onRelay(m).catch((err) => this.log.error(`relay handling failed: ${err instanceof Error ? err.message : err}`));
     });
     this.signaling.start();
 
@@ -158,11 +240,14 @@ export class Daemon {
   /** Graceful shutdown: stop all children, then the servers. Desired state is left untouched. */
   async stop(): Promise<void> {
     this.log.info('shutting down: stopping all apps');
+    this._sessions?.closeAll();
     await this.signaling?.stop();
     await this.manager.stopAll();
     await this.controlApi?.close();
     await this.localServer.close();
     await this.state.flush();
     await this.pids.flush();
+    await this.paired.flush();
+    shutdownPeerLibrary();
   }
 }

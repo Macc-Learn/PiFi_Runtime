@@ -64,6 +64,8 @@ export async function startDaemon(opts: {
   keepHome?: boolean;
   log?: Logger;
   signaling?: DaemonOptions['signaling'];
+  transportFactory?: DaemonOptions['transportFactory'];
+  appRequestTimeoutMs?: number;
 } = {}): Promise<TestDaemon> {
   const home = opts.home ?? (await makeHome());
   for (const app of opts.apps ?? []) await installApp(home, app);
@@ -85,6 +87,8 @@ export async function startDaemon(opts: {
     log: opts.log ?? silentLogger,
     readMemory: opts.readMemory ?? (() => ({ totalMB: 4096, availableMB: 2048 })),
     signaling: opts.signaling,
+    transportFactory: opts.transportFactory,
+    appRequestTimeoutMs: opts.appRequestTimeoutMs,
   });
   await daemon.start();
   return {

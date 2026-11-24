@@ -11,11 +11,12 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Logger } from './logger.js';
 
-export async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
+export async function writeJsonAtomic(file: string, data: unknown, mode = 0o644): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`;
   try {
-    await writeFile(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    // The temp file gets its final mode at creation, so the content is never briefly world-readable.
+    await writeFile(tmp, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode, flag: 'wx' });
     await rename(tmp, file);
   } catch (err) {
     await unlink(tmp).catch(() => undefined); // don't leave temp litter behind

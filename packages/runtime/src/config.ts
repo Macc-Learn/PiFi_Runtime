@@ -3,6 +3,7 @@
  * variables override them, and tests override both with the `overrides` argument
  * (that's how tests get millisecond timeouts instead of 5-second ones).
  */
+import os from 'node:os';
 import path from 'node:path';
 import type { LogLevel } from './logger.js';
 import { HELLO_TIMEOUT_MS } from '@pifi/protocol';
@@ -40,6 +41,28 @@ export interface Config {
   signalPingMs: number;
   signalBackoffMinMs: number;
   signalBackoffMaxMs: number;
+  /** STUN/TURN URLs for WebRTC (PIFI_ICE_SERVERS, JSON array). TURN credentials come from env, never the repo. */
+  iceServers: string[];
+  maxSessions: number;
+  maxPairedPhones: number;
+  /** Shown to phones in the dashboard. */
+  deviceName: string;
+  /** A session with no traffic for this long is closed. */
+  sessionIdleSec: number;
+}
+
+function iceServersFromEnv(raw: string | undefined): string[] {
+  if (raw === undefined || raw === '') return ['stun:stun.l.google.com:19302'];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('PIFI_ICE_SERVERS must be a JSON array of URL strings');
+  }
+  if (!Array.isArray(parsed) || !parsed.every((u) => typeof u === 'string' && /^(stun|stuns|turn|turns):/.test(u))) {
+    throw new Error('PIFI_ICE_SERVERS must be a JSON array of stun:/turn: URL strings');
+  }
+  return parsed as string[];
 }
 
 function intFromEnv(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
@@ -75,6 +98,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     signalPingMs: intFromEnv(env, 'PIFI_SIGNAL_PING_MS', 25_000),
     signalBackoffMinMs: intFromEnv(env, 'PIFI_SIGNAL_BACKOFF_MIN_MS', 1_000),
     signalBackoffMaxMs: intFromEnv(env, 'PIFI_SIGNAL_BACKOFF_MAX_MS', 30_000),
+    iceServers: iceServersFromEnv(env.PIFI_ICE_SERVERS),
+    maxSessions: intFromEnv(env, 'PIFI_MAX_SESSIONS', 5),
+    maxPairedPhones: intFromEnv(env, 'PIFI_MAX_PAIRED_PHONES', 10),
+    deviceName: (env.PIFI_DEVICE_NAME || os.hostname()).slice(0, 64),
+    sessionIdleSec: intFromEnv(env, 'PIFI_SESSION_IDLE_SEC', 45),
   };
   const config = { ...base, ...overrides };
   if (config.pairTtlSec < 1 || config.pairTtlSec > 3600) throw new Error('PIFI_PAIR_TTL_SEC must be between 1 and 3600');

@@ -13,7 +13,8 @@ import { hashDirectory, registeredAppsDir } from './registry.js';
 import { runDaemon } from './index.js';
 import { renderQr } from './qr.js';
 
-const DEFAULT_FRONTEND = 'https://pifi.example';
+/** The project's GitHub Pages shell. Override with PIFI_FRONTEND_URL or --frontend. */
+const DEFAULT_FRONTEND = 'https://macc-learn.github.io/PiFi_Runtime';
 
 const USAGE = `pifi <command>
 
@@ -23,6 +24,9 @@ const USAGE = `pifi <command>
   identity [--json]         this Pi's device ID and public key (never the private key)
   pair [--ttl N] [--frontend URL] [--json] [--no-qr] [--cancel]
                             create a one-time pairing code and show it as a QR code
+  devices list [--json]     paired phones
+  devices revoke <id-prefix|label>
+                            unpair a phone (ends its live session immediately)
   start <app>               start an app
   stop <app> [--hard]       stop an app (--hard = SIGKILL immediately)
   restart <app>             stop then start
@@ -135,6 +139,9 @@ async function main(): Promise<void> {
     case 'pair':
       await pair(values);
       return;
+    case 'devices':
+      await devices(arg, rest[0], values.json === true);
+      return;
     case 'start':
     case 'restart':
       console.log(JSON.stringify(await api('POST', `/apps/${needApp()}/${command}`), null, 2));
@@ -190,14 +197,36 @@ async function pair(values: { ttl?: string; frontend?: string; json?: boolean; '
     console.log(JSON.stringify({ ...code, link }, null, 2));
     return;
   }
-  if (frontend === DEFAULT_FRONTEND) {
-    console.error(`warning: using the placeholder front-end ${DEFAULT_FRONTEND}; set PIFI_FRONTEND_URL or --frontend`);
-  }
   if (!values['no-qr']) console.log(await renderQr(link));
+  // Make the host impossible to miss, so a wrong or look-alike host stands out.
+  console.log(`Open this on ${new URL(frontend).origin}`);
   console.log(`Pair link: ${link}`);
   console.log(`Expires:   ${new Date(code.expiresAt).toLocaleString()} (${Math.round(code.ttlSec / 60)} min)`);
   console.log('\nAnyone who sees this QR code or link before it expires can pair with this Pi.');
   console.log('Run `clear` afterwards, and `pifi pair --cancel` if you no longer need it.');
+}
+
+async function devices(sub: string | undefined, target: string | undefined, json: boolean): Promise<void> {
+  if (sub === 'list' || sub === undefined) {
+    const phones = (await api('GET', '/phones')) as Array<{ phoneId: string; label: string; createdAt: number; lastSeenAt: number; connected: boolean }>;
+    if (json) return void console.log(JSON.stringify(phones, null, 2));
+    if (phones.length === 0) return void console.log('(no paired phones; run `pifi pair`)');
+    printTable(phones.map((p) => ({
+      id: p.phoneId.slice(0, 12),
+      label: p.label,
+      paired: new Date(p.createdAt).toLocaleDateString(),
+      'last seen': new Date(p.lastSeenAt).toLocaleString(),
+      connected: p.connected ? 'yes' : 'no',
+    })));
+    return;
+  }
+  if (sub === 'revoke') {
+    if (!target) throw new Error('usage: pifi devices revoke <phoneId-prefix | label>');
+    const { revoked } = (await api('DELETE', `/phones/${encodeURIComponent(target)}`)) as { revoked: string };
+    console.log(`revoked ${revoked.slice(0, 12)}… (its session, if any, was closed)`);
+    return;
+  }
+  throw new Error('usage: pifi devices list [--json] | pifi devices revoke <phoneId-prefix | label>');
 }
 
 main().catch((err) => {

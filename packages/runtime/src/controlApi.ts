@@ -77,6 +77,10 @@ export interface ControlHooks {
   identity: Identity;
   pairing: PairingManager;
   signalingState: () => SignalingState;
+  phones: () => Array<Record<string, unknown>>;
+  /** Revoke by unique phoneId prefix (>= 6 chars) or exact label. Returns the full phoneId. */
+  revokePhone: (query: string) => string;
+  sessionCount: () => number;
 }
 
 export class ControlApi {
@@ -156,8 +160,25 @@ export class ControlApi {
         dev: this.config.dev,
         memory: s.memory,
         signaling: this.hooks.signalingState(),
+        sessions: this.hooks.sessionCount(),
+        paired: this.hooks.phones().length,
         apps: s.apps,
       };
+    }
+    if (method === 'GET' && p === '/phones') return this.hooks.phones(); // public keys are never included
+    const phone = /^\/phones\/([^/]+)$/.exec(p);
+    if (phone && method === 'DELETE') {
+      let query: string;
+      try {
+        query = decodeURIComponent(phone[1] as string);
+      } catch {
+        throw new PifiError('BAD_REQUEST', 'bad phone id', 400);
+      }
+      try {
+        return { revoked: this.hooks.revokePhone(query) };
+      } catch (err) {
+        throw new PifiError('NOT_FOUND', err instanceof Error ? err.message : 'no such phone', 404);
+      }
     }
     if (method === 'GET' && p === '/identity') {
       // Public information only. The private key is not reachable from the Identity object.

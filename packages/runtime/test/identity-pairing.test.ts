@@ -226,9 +226,11 @@ test('CLI: pair --json, default pair with QR, identity without private key', asy
     assert.match(pretty.stdout, /Pair link: https:\/\/shell\.example\/pair#id=[a-z2-7]{52}&s=[A-Za-z0-9_-]{22}/);
     assert.match(pretty.stdout, /Anyone who sees this QR code/);
 
-    const placeholder = await runCli(['pair', '--no-qr'], { ...env, PIFI_FRONTEND_URL: '' });
-    assert.match(placeholder.stderr, /placeholder front-end/);
-    assert.ok(!QR_CHARS.test(placeholder.stdout), '--no-qr');
+    assert.match(pretty.stdout, /Open this on https:\/\/shell\.example/, 'the host is printed prominently');
+    const fallback = await runCli(['pair', '--no-qr'], { ...env, PIFI_FRONTEND_URL: '' });
+    assert.match(fallback.stdout, /^Open this on https:\/\/macc-learn\.github\.io$/m, 'default is the project Pages site');
+    assert.match(fallback.stdout, /Pair link: https:\/\/macc-learn\.github\.io\/PiFi_Runtime\/pair#id=/);
+    assert.ok(!QR_CHARS.test(fallback.stdout), '--no-qr');
 
     const cancel = await runCli(['pair', '--cancel'], env);
     assert.equal(cancel.code, 0);

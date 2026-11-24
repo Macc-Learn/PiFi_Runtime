@@ -1,7 +1,7 @@
 /** Phase 3 §8: app ops, events, streams and capabilities, against the real echo app. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { CloseCode, PROTOCOL_VERSION, encodeChunk, type StreamMessage } from '@pifi/protocol';
 import { AppStreams, type StreamEndpoint } from '../src/appStreams.js';
@@ -165,4 +165,5 @@ test('manifest: frontend must be https (localhost only in dev); displayName max 
   assert.deepEqual(prod.entries.map((e) => e.manifest.name), ['secure']);
   const dev = await loadRegistry(home, { dev: true });
   assert.deepEqual(dev.entries.map((e) => e.manifest.name).sort(), ['local', 'secure']);
+  await rm(home, { recursive: true, force: true });
 });
